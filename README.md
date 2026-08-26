@@ -165,8 +165,10 @@ anyone.
 What a visitor carries is not decoration: press `G` inside and the figure
 drinks, takes a photograph, or takes a draw, with the sound to match.
 
-The figure itself is faceless on purpose. A crudely modelled face is the first
-thing anyone looks at; a bare one keeps the eye on the clothes.
+The figure is skinned to a seventeen-bone skeleton, so limbs bend rather than
+pivot, and it wears a painted face — which is how every character in the games
+this is aiming at got theirs. Skin tone and hair colour are chosen at the door
+and live at the top of the same file.
 
 ---
 
@@ -273,10 +275,20 @@ A few decisions worth knowing about if you go poking around:
 - **The tree is grown, not modelled** — a recursive skeleton swept into tapered
   tubes, with about 2,300 leaf clusters hung on the tips as instanced quads
   that drift in a slow wind.
-- **The figure is built the same way.** Lofted tubes joined by spheres exactly
-  as wide as the tubes they join, so a limb can rotate without ever opening a
-  seam. Every garment is a second, slightly larger shell parented to the same
-  joint, which is why a top can be swapped without touching the body.
+- **The figure is built the same way, and skinned.** Each limb is one
+  continuous lofted tube bound to a skeleton by height: geometry between two
+  bones is driven by the upper one, and within a few centimetres of a joint the
+  two blend to an even split. That is what turns a hinge into a bend. Every
+  garment is a second, slightly larger tube bound to the same skeleton, which
+  is why a top can be swapped without touching the body underneath.
+- **The face is painted, not modelled.** A GTA San Andreas character is about
+  3,000–5,000 triangles; ours is 12,000. Polygons were never the gap. What
+  reads as a person is a textured face, cloth with folds painted into it, and
+  smooth deformation at the joints.
+- **Contact shading is baked into vertex colours.** The body is approximated by
+  ten spheres and each vertex asks how much of its sky they block. One pass at
+  build time, free thereafter, and it darkens exactly what a real renderer
+  would — armpits, inner thighs, under the chin, under a hem.
 - **The camera arm is clamped analytically, not raycast.** The room is a known
   shape — a cylinder capped by an ellipsoidal dome, plus two rectangular
   chambers — so the arm is shortened until its end sits somewhere legal. It is

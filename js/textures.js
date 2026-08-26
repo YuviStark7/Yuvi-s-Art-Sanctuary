@@ -25,12 +25,13 @@ export function makeNoise(seed) {
 
   const smooth = (t) => t * t * (3 - 2 * t);
 
-  return function noise(x, y, period) {
-    const p = Math.max(1, period | 0);
+  return function noise(x, y, px, py) {
+    const pX = Math.max(1, px | 0);
+    const pY = Math.max(1, (py === undefined ? px : py) | 0);
     const xi = Math.floor(x), yi = Math.floor(y);
     const xf = smooth(x - xi), yf = smooth(y - yi);
-    const x0 = ((xi % p) + p) % p, y0 = ((yi % p) + p) % p;
-    const x1 = (x0 + 1) % p, y1 = (y0 + 1) % p;
+    const x0 = ((xi % pX) + pX) % pX, y0 = ((yi % pY) + pY) % pY;
+    const x1 = (x0 + 1) % pX, y1 = (y0 + 1) % pY;
     const a = grid[((y0 & 255) << 8) | (x0 & 255)];
     const b = grid[((y0 & 255) << 8) | (x1 & 255)];
     const c = grid[((y1 & 255) << 8) | (x0 & 255)];
@@ -41,13 +42,24 @@ export function makeNoise(seed) {
   };
 }
 
-/** Fractal sum. `period` is measured in lattice cells at the base octave. */
+/**
+ * Fractal sum. `period` is the lattice size at the base octave, and may be a
+ * pair [x, y] when the two axes tile at different rates.
+ *
+ * For a texture to tile, the coordinate you pass must span exactly `period`
+ * across the 0..1 range you are drawing. Get that wrong and every repeat
+ * shows a seam.
+ */
 export function fbm(noise, x, y, period, octaves, gain, lacunarity) {
   gain = gain === undefined ? 0.5 : gain;
   lacunarity = lacunarity === undefined ? 2 : lacunarity;
+  const px = Array.isArray(period) ? period[0] : period;
+  const py = Array.isArray(period) ? period[1] : period;
   let sum = 0, amp = 1, norm = 0, freq = 1;
   for (let o = 0; o < octaves; o++) {
-    sum += amp * noise(x * freq, y * freq, Math.max(1, Math.round(period * freq)));
+    sum += amp * noise(x * freq, y * freq,
+                       Math.max(1, Math.round(px * freq)),
+                       Math.max(1, Math.round(py * freq)));
     norm += amp;
     amp *= gain;
     freq *= lacunarity;
@@ -411,32 +423,78 @@ export function softDot(opts) {
  */
 export function clothSurface(opts) {
   opts = opts || {};
-  const size = opts.size || 256;
-  const weave = opts.weave === undefined ? 42 : opts.weave;   // threads across
-  const slub = opts.slub === undefined ? 0.5 : opts.slub;     // irregularity
+  const size = opts.size || 512;
+  const weave = opts.weave === undefined ? 64 : opts.weave;   // threads across
+  const drape = opts.drape === undefined ? 1 : opts.drape;    // how much it folds
   const noise = makeNoise(opts.seed || 63);
   const height = new Float32Array(size * size);
   const rough = new Float32Array(size * size);
+  const shade = new Float32Array(size * size);
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const u = (x / size) * weave, v = (y / size) * weave;
+      const u = x / size, v = y / size;
+
       // over-under weave: two offset ridges beating against each other
-      const warp = Math.sin(u * Math.PI * 2);
-      const weft = Math.sin(v * Math.PI * 2);
-      const cross = warp * weft;
-      const thread = (warp + weft) * 0.32 + cross * 0.36;
+      const warp = Math.sin(u * weave * Math.PI * 2);
+      const weft = Math.sin(v * weave * Math.PI * 2);
+      const thread = (warp + weft) * 0.26 + warp * weft * 0.30;
 
-      const drift = fbm(noise, (x / size) * 5, (y / size) * 5, 5, 4) - 0.5;
-      const fibre = noise(x * 1.7, y * 1.7, 256) - 0.5;
+      /* Folds. Cloth creases along its hang, so the noise tiles four times
+         across and only twice down — long soft ridges rather than blobs.
+         The warp field is itself periodic, so displacing by it keeps the
+         whole thing seamless. */
+      const warpX = fbm(noise, u * 4, v * 2, [4, 2], 3) - 0.5;
+      const f1 = fbm(noise, u * 8 + warpX * 1.5, v * 3, [8, 3], 4);
+      const f2 = fbm(noise, u * 16 + warpX * 2.0, v * 6, [16, 6], 3);
+      const folds = ((f1 - 0.5) * 1.25 + (f2 - 0.5) * 0.55) * drape;
 
-      height[y * size + x] = 0.5 + thread * 0.34 + drift * slub * 0.5 + fibre * 0.16;
-      rough[y * size + x] = 0.80 + drift * 0.16 + fibre * 0.08 - Math.abs(cross) * 0.06;
+      // ridge tops catch light, valleys hold shadow
+      const crease = Math.abs(folds) * 2.0;
+      const fibre = noise(u * 128, v * 128, 128) - 0.5;
+
+      height[y * size + x] = 0.5 + folds * 0.42 + thread * 0.13 + fibre * 0.09;
+      rough[y * size + x] = 0.82 + folds * 0.10 + fibre * 0.07 - Math.abs(warp * weft) * 0.05;
+
+      // this is the part that does the work: shading painted into the cloth,
+      // the way it is on a San Andreas character
+      shade[y * size + x] = 1.0 - crease * 0.13 * drape + folds * 0.06;
     }
   }
 
   return {
-    normalMap: finish(heightToNormal(height, size, opts.relief === undefined ? 1.5 : opts.relief), { srgb: false }),
+    map: finish(grayTexture(shade, size)),
+    normalMap: finish(heightToNormal(height, size, opts.relief === undefined ? 2.4 : opts.relief), { srgb: false }),
+    roughnessMap: finish(grayTexture(rough, size), { srgb: false })
+  };
+}
+
+/**
+ * Skin: not a colour, a modulation. White where the skin is untouched, so it
+ * multiplies over any tone; darker in the creases and at the hairline.
+ */
+export function skinSurface(opts) {
+  opts = opts || {};
+  const size = opts.size || 512;
+  const noise = makeNoise(opts.seed || 88);
+  const height = new Float32Array(size * size);
+  const shade = new Float32Array(size * size);
+  const rough = new Float32Array(size * size);
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size, v = y / size;
+      const pore = fbm(noise, u * 48, v * 48, 48, 3, 0.6);
+      const blotch = fbm(noise, u * 4, v * 4, 4, 4);
+      height[y * size + x] = pore * 0.7 + blotch * 0.3;
+      shade[y * size + x] = 0.965 + (blotch - 0.5) * 0.07 + (pore - 0.5) * 0.03;
+      rough[y * size + x] = 0.66 + (blotch - 0.5) * 0.13 + (pore - 0.5) * 0.10;
+    }
+  }
+
+  return {
+    map: finish(grayTexture(shade, size)),
+    normalMap: finish(heightToNormal(height, size, 0.55), { srgb: false }),
     roughnessMap: finish(grayTexture(rough, size), { srgb: false })
   };
 }
@@ -460,6 +518,143 @@ export function leatherSurface(opts) {
     normalMap: finish(heightToNormal(height, size, 1.1), { srgb: false }),
     roughnessMap: finish(grayTexture(rough, size), { srgb: false })
   };
+}
+
+/* ----------------------------------------------------------------- face -- */
+
+/**
+ * A face, painted rather than modelled — which is how every character in the
+ * games this is modelled on got theirs. Transparent everywhere except the
+ * features, so it sits over any skin tone as a decal on the front of the head.
+ */
+export function faceTexture(opts) {
+  opts = opts || {};
+  const size = opts.size || 512;
+  const c = makeCanvas(size), ctx = c.getContext('2d');
+  const S = size / 512;
+  ctx.clearRect(0, 0, size, size);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  const brow = opts.brow || 'rgba(48,34,26,0.72)';
+  const lash = opts.lash || 'rgba(32,24,20,0.86)';
+  const iris = opts.iris || '#4a3b2c';
+
+  /** One eye, mirrored by the caller. */
+  const eye = (cx, cy, w, h, flip) => {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(flip ? -1 : 1, 1);
+
+    // the white, an almond rather than an oval
+    ctx.beginPath();
+    ctx.moveTo(-w, 0);
+    ctx.quadraticCurveTo(-w * 0.35, -h * 1.25, w * 0.72, -h * 0.30);
+    ctx.quadraticCurveTo(w * 0.30, h * 1.05, -w, 0);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(238,236,231,0.94)';
+    ctx.fill();
+
+    // iris and pupil, tucked slightly under the upper lid
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = iris;
+    ctx.beginPath();
+    ctx.arc(-w * 0.02, -h * 0.10, h * 0.74, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#140f0c';
+    ctx.beginPath();
+    ctx.arc(-w * 0.02, -h * 0.10, h * 0.34, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.beginPath();
+    ctx.arc(-w * 0.24, -h * 0.42, h * 0.17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // upper lash line — the single mark that reads most as "a face"
+    ctx.strokeStyle = lash;
+    ctx.lineWidth = 5.2 * S;
+    ctx.beginPath();
+    ctx.moveTo(-w * 1.02, h * 0.04);
+    ctx.quadraticCurveTo(-w * 0.35, -h * 1.34, w * 0.78, -h * 0.30);
+    ctx.stroke();
+
+    // a whisper of a lower lid
+    ctx.strokeStyle = 'rgba(60,44,36,0.34)';
+    ctx.lineWidth = 2.4 * S;
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.80, h * 0.16);
+    ctx.quadraticCurveTo(w * 0.10, h * 0.92, w * 0.68, -h * 0.18);
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  const cx = size * 0.5;
+  const eyeY = size * 0.40;
+  const eyeDx = size * 0.200;
+  eye(cx - eyeDx, eyeY, size * 0.094, size * 0.054, false);
+  eye(cx + eyeDx, eyeY, size * 0.094, size * 0.054, true);
+
+  // brows
+  ctx.strokeStyle = brow;
+  ctx.lineCap = 'round';
+  for (const dir of [-1, 1]) {
+    ctx.lineWidth = 13 * S;
+    ctx.beginPath();
+    ctx.moveTo(cx + dir * (eyeDx - size * 0.092), eyeY - size * 0.105);
+    ctx.quadraticCurveTo(
+      cx + dir * eyeDx, eyeY - size * 0.150,
+      cx + dir * (eyeDx + size * 0.088), eyeY - size * 0.098);
+    ctx.stroke();
+  }
+
+  // nose: two soft shadows and the underside, never an outline
+  const noseY = size * 0.575;
+  ctx.strokeStyle = 'rgba(96,66,50,0.20)';
+  ctx.lineWidth = 9 * S;
+  for (const dir of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(cx + dir * size * 0.030, eyeY + size * 0.030);
+    ctx.quadraticCurveTo(
+      cx + dir * size * 0.044, noseY - size * 0.030,
+      cx + dir * size * 0.052, noseY);
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(88,60,46,0.26)';
+  ctx.beginPath();
+  ctx.ellipse(cx, noseY + size * 0.012, size * 0.055, size * 0.017, 0, 0, Math.PI * 2);
+  ctx.fill();
+  for (const dir of [-1, 1]) {
+    ctx.fillStyle = 'rgba(56,38,30,0.42)';
+    ctx.beginPath();
+    ctx.ellipse(cx + dir * size * 0.034, noseY + size * 0.014,
+                size * 0.014, size * 0.009, dir * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // mouth: the seam between the lips does the work, not an outline
+  const mouthY = size * 0.715;
+  ctx.strokeStyle = 'rgba(84,50,44,0.62)';
+  ctx.lineWidth = 5.6 * S;
+  ctx.beginPath();
+  ctx.moveTo(cx - size * 0.082, mouthY);
+  ctx.quadraticCurveTo(cx, mouthY + size * 0.020, cx + size * 0.082, mouthY);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(150,86,78,0.20)';
+  ctx.beginPath();
+  ctx.ellipse(cx, mouthY - size * 0.016, size * 0.070, size * 0.020, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx, mouthY + size * 0.021, size * 0.062, size * 0.024, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // soften the whole thing so nothing reads as line art
+  ctx.filter = 'blur(' + (1.5 * S) + 'px)';
+  ctx.drawImage(c, 0, 0);
+  ctx.filter = 'none';
+
+  return finish(c);
 }
 
 /* ------------------------------------------------------------- artworks -- */

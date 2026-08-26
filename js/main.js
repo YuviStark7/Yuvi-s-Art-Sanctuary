@@ -470,15 +470,29 @@ async function takeCoin(cents) {
     return;
   }
 
-  app.pendingWish = { paymentId: result.paymentId, amount: cents };
+  app.pendingWish = { paymentId: result.paymentId, amount: cents, thrown: false };
   ui.closeCoin();
   player.enabled = true;
-  if (character) character.play(character.tossAction);
-  else spawnCoin();
+
+  if (character) {
+    // a coin that has been paid for takes priority over whatever the figure
+    // was in the middle of doing
+    character.action = null;
+    if (!character.play(character.tossAction)) spawnCoin();
+  } else {
+    spawnCoin();
+  }
+
+  // and if the throw never reaches its release for any reason, the coin still
+  // goes in — nobody pays and gets nothing
+  setTimeout(() => {
+    if (app.pendingWish && !app.pendingWish.thrown) spawnCoin();
+  }, 2600);
 }
 
 function spawnCoin() {
   if (!coins) return;
+  if (app.pendingWish) app.pendingWish.thrown = true;
   const side = character && character.tossAction === 'tossLeft' ? 'L' : 'R';
   const from = character ? character.handPosition(_hand, side)
                          : _hand.set(player.position.x, 1.3, player.position.z);

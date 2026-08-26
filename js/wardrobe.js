@@ -25,14 +25,17 @@
  *  ----------------------------------------------------------------------
  */
 
-/** The figure itself. Deliberately faceless — the clothes are the subject. */
+/**
+ * The figure itself. `hair` is the colour that goes with each tone — change
+ * it freely, or set them all the same if you would rather not tie the two.
+ */
 export const FIGURE = {
   tones: [
-    { id: 'tone-1', color: 0xe8cdb4 },
-    { id: 'tone-2', color: 0xd2a884 },
-    { id: 'tone-3', color: 0xa87551 },
-    { id: 'tone-4', color: 0x6f4a33 },
-    { id: 'tone-5', color: 0x47301f }
+    { id: 'tone-1', color: 0xe8cdb4, hair: 0x6b4a2c },
+    { id: 'tone-2', color: 0xd2a884, hair: 0x4a3323 },
+    { id: 'tone-3', color: 0xa87551, hair: 0x33241a },
+    { id: 'tone-4', color: 0x6f4a33, hair: 0x241a14 },
+    { id: 'tone-5', color: 0x47301f, hair: 0x1a1310 }
   ],
   defaultTone: 1
 };
