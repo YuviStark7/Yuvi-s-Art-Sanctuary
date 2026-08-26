@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Stark Museo — a sanctuary for stillness</title>
+<meta name="description" content="A virtual monolithic sanctuary built around water, light and a single tree. Walk through it in first person.">
+<meta name="theme-color" content="#0b0b0a">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Stark Museo">
+<meta property="og:description" content="A virtual monolithic sanctuary built around water, light and a single tree.">
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%230b0b0a'/><circle cx='16' cy='17' r='7' fill='none' stroke='%23c9c4ba' stroke-width='1.4'/><path d='M16 6v11' stroke='%23c9c4ba' stroke-width='1.4'/></svg>">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="scene"></canvas>
+  <div id="vignette" aria-hidden="true"></div>
+  <div id="grain" aria-hidden="true"></div>
+</div>
+
+<!-- ---------------------------------------------------------- loading -- -->
+<div id="loading" class="screen">
+  <div class="plate">
+    <h1 class="wordmark">STARK<span>MUSEO</span></h1>
+    <div class="bar"><i id="bar-fill"></i></div>
+    <p id="load-note" class="note">preparing the room</p>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------------- gate -- -->
+<div id="gate" class="screen hidden">
+  <div class="plate wide">
+    <h1 class="wordmark">STARK<span>MUSEO</span></h1>
+    <p id="gate-sub" class="subtitle">A sanctuary for stillness</p>
+    <p id="gate-statement" class="statement"></p>
+
+    <button id="enter" class="primary">Get ready</button>
+    <button id="watch" class="ghost">Or simply watch &mdash; guided walk</button>
+
+    <div class="controls">
+      <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>walk</span></div>
+      <div><kbd>mouse</kbd><span>turn the camera</span></div>
+      <div><kbd>shift</kbd><span>walk faster</span></div>
+      <div><kbd>E</kbd><span>look closely at a work</span></div>
+      <div><kbd>G</kbd><span>use what you are carrying</span></div>
+      <div><kbd>F</kbd><span>toss a coin at the water</span></div>
+      <div><kbd>T</kbd><span>guided walk</span></div>
+      <div><kbd>esc</kbd><span>pause</span></div>
+    </div>
+    <p class="fineprint">On a phone or tablet: left thumb to walk, right thumb to look.</p>
+  </div>
+</div>
+
+<!-- --------------------------------------------------------- wardrobe -- -->
+<div id="wardrobe" class="screen side hidden">
+  <div class="wardrobe-panel">
+    <h2 id="wardrobe-title" class="menu-title">Before you go in</h2>
+    <p id="wardrobe-intro" class="statement"></p>
+    <div id="wardrobe-racks"></div>
+    <button id="wardrobe-enter" class="primary">Enter the sanctuary</button>
+    <p class="fineprint">Drag to turn the figure. You can change none of this later, so choose something you like.</p>
+  </div>
+</div>
+
+<!-- -------------------------------------------------------------- hud -- -->
+<div id="hud" class="hidden">
+  <div id="reticle"><i></i></div>
+  <div id="prompts"></div>
+  <div id="corner">
+    <span id="corner-title">STARK MUSEO</span>
+    <span id="corner-sub"></span>
+  </div>
+  <div id="touch-actions" class="hidden">
+    <button id="tap-use" class="tap hidden"></button>
+    <button id="tap-act" class="tap hidden"></button>
+  </div>
+  <div id="touch-hint" class="hidden">left thumb walks &nbsp;·&nbsp; right thumb looks</div>
+</div>
+
+<!-- ------------------------------------------------------------- coin -- -->
+<div id="coin" class="screen hidden">
+  <div class="plate">
+    <h2 id="coin-title" class="menu-title">A coin in the water</h2>
+    <p id="coin-intro" class="statement"></p>
+    <p id="coin-demo" class="demo-note hidden"></p>
+    <div id="coin-amounts" class="coin-amounts"></div>
+    <p id="coin-status" class="fineprint"></p>
+    <button id="coin-cancel" class="ghost">Not now</button>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------------- wish -- -->
+<div id="wish" class="screen hidden">
+  <div class="plate">
+    <h2 id="wish-title" class="menu-title">Make your wish</h2>
+    <p id="wish-intro" class="statement"></p>
+    <label class="wish-field">
+      <textarea id="wish-text" maxlength="280" rows="4" spellcheck="true"></textarea>
+      <span class="wish-count"><span id="wish-count">0</span> / 280</span>
+    </label>
+    <button id="wish-send" class="primary">Let it go</button>
+    <button id="wish-skip" class="ghost">Keep it to myself</button>
+  </div>
+</div>
+
+<!-- ----------------------------------------------------------- viewer -- -->
+<div id="viewer" class="screen hidden">
+  <div class="viewer-inner">
+    <figure>
+      <img id="viewer-img" alt="">
+    </figure>
+    <div class="caption">
+      <h2 id="viewer-title"></h2>
+      <p id="viewer-meta"></p>
+      <p id="viewer-note"></p>
+      <button id="viewer-close" class="ghost">Close <kbd>esc</kbd></button>
+    </div>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------------- menu -- -->
+<div id="menu" class="screen hidden">
+  <div class="plate">
+    <h2 class="menu-title">Paused</h2>
+
+    <label class="row">
+      <span>Detail</span>
+      <select id="opt-quality">
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+      </select>
+    </label>
+
+    <label class="row">
+      <span>Sound</span>
+      <input id="opt-volume" type="range" min="0" max="100" value="55">
+    </label>
+
+    <label class="row">
+      <span>Look sensitivity</span>
+      <input id="opt-sens" type="range" min="30" max="220" value="100">
+    </label>
+
+    <label class="row">
+      <span>Field of view</span>
+      <input id="opt-fov" type="range" min="50" max="88" value="62">
+    </label>
+
+    <label class="row check">
+      <span>Invert vertical look</span>
+      <input id="opt-invert" type="checkbox">
+    </label>
+
+    <button id="resume" class="primary">Resume</button>
+    <button id="menu-tour" class="ghost">Guided walk</button>
+    <button id="menu-reset" class="ghost">Return to the entrance</button>
+    <p class="fineprint">Changing detail rebuilds the room and takes a moment.</p>
+  </div>
+</div>
+
+<noscript>
+  <div class="screen"><div class="plate">
+    <h1 class="wordmark">STARK<span>MUSEO</span></h1>
+    <p class="statement">This sanctuary is drawn in real time and needs JavaScript switched on.</p>
+  </div></div>
+</noscript>
+
+<!--
+  A plain, non-module script: it still runs in the two cases where the module
+  below never will, so the page explains itself instead of sitting on
+  "preparing the room" forever.
+-->
+<script>
+(function () {
+  var note = document.getElementById('load-note');
+  var bar = document.getElementById('bar-fill');
+
+  function explain(title, detail) {
+    if (!note) return;
+    note.className = 'note failure';
+    note.innerHTML = '<b>' + title + '</b>' + detail;
+    if (bar) bar.parentNode.style.display = 'none';
+  }
+
+  // 1. Opened straight from the folder. Browsers treat every file:// request
+  //    as cross-origin and refuse to load the modules, so nothing starts.
+  if (location.protocol === 'file:') {
+    explain('This page needs a web server',
+      'A browser will not load JavaScript modules straight from a folder, so the ' +
+      'sanctuary never gets a chance to start.' +
+      '<br><br>Double-click <code>start.cmd</code> in this folder ' +
+      '(<code>start.sh</code> on Mac or Linux), or open a terminal here and run ' +
+      '<code>node serve.mjs</code>.' +
+      '<br><br>Published to GitHub Pages, it simply works — this only affects ' +
+      'opening the file directly.');
+    return;
+  }
+
+  // 2. A browser too old for import maps (Safari before 16.4, Firefox before 108).
+  if (!(window.HTMLScriptElement && HTMLScriptElement.supports &&
+        HTMLScriptElement.supports('importmap'))) {
+    explain('This browser is a little too old',
+      'The sanctuary needs import maps and WebGL 2. Please try a recent ' +
+      'Chrome, Edge, Firefox or Safari.');
+    return;
+  }
+
+  // 3. Anything else: say what went wrong rather than hang.
+  window.addEventListener('error', function (e) {
+    if (window.museo) return;
+    explain('The sanctuary could not start', e.message || 'Unknown error.');
+  });
+  setTimeout(function () {
+    if (!window.museo) {
+      explain('The sanctuary could not start',
+        'The page loaded but its scripts did not run. The browser console ' +
+        '(F12) will say why.');
+    }
+  }, 20000);
+})();
+</script>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.min.js",
+    "three/addons/": "./vendor/three/addons/"
+  }
+}
+</script>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
