@@ -446,3 +446,78 @@ export function buildTree(textures, uniforms, seed) {
   group.userData.leafCount = leafSpots.length;
   return { group, barkMat, leafMat, leafCount: leafSpots.length };
 }
+
+/* ------------------------------------------------ the imported blossom -- */
+
+/**
+ * Dress an imported blossom tree (models/blossom-tree.glb) for the sanctuary.
+ *
+ * The .glb was cut out of a larger tree pack: one tree's canopy and only the
+ * trunk components standing under it, re-framed Y-up with the trunk base at
+ * the origin and scaled so the whole thing is TREE.height tall. Petal tint and
+ * ambient occlusion are baked into COLOR_0, so the canopy needs no texture at
+ * all — which is why it loads in a few megabytes rather than eighty.
+ *
+ * The gltf is owned by the model cache and reused across quality rebuilds, so
+ * this returns a group holding the *same* meshes each time rather than clones.
+ * Nothing here may modify geometry.
+ */
+export function buildImportedTree(gltf, uniforms, quality) {
+  const group = new THREE.Group();
+  group.name = 'tree';
+
+  let barkMat = null, leafMat = null, leafCount = 0;
+  const blossom = [];
+
+  for (const child of gltf.scene.children.slice()) {
+    group.add(child);
+  }
+
+  group.traverse((o) => {
+    if (!o.isMesh) return;
+    const mat = o.material;
+    o.castShadow = true;
+    o.receiveShadow = true;
+
+    if (o.name.startsWith('Blossom')) {
+      mat.vertexColors = true;
+      mat.roughness = 0.94;
+      mat.metalness = 0.0;
+      // Petals are single-sided cards; lighting the back face from the flipped
+      // normal is what stops the canopy going black when seen against the sky.
+      mat.side = THREE.DoubleSide;
+      mat.shadowSide = THREE.DoubleSide;
+      leafMat = mat;
+      leafCount += o.geometry.index ? o.geometry.index.count / 3 : 0;
+      blossom.push(o);
+    } else {
+      mat.vertexColors = true;     // baked contact shading on the trunk
+      mat.roughness = 0.93;
+      mat.metalness = 0.0;
+      if (mat.normalScale) mat.normalScale.set(0.85, 0.85);
+      barkMat = mat;
+    }
+    mat.needsUpdate = true;
+  });
+
+  // The canopy ships as two layers. The second is a thickening pass: dropping
+  // it halves the triangle count and reads as a slightly airier tree, which is
+  // the right trade on a machine that asked for the low preset.
+  if (quality && quality.canopyLayers === 1) {
+    const extra = blossom.find((o) => o.name === 'BlossomB');
+    if (extra) {
+      extra.visible = false;
+      leafCount -= extra.geometry.index ? extra.geometry.index.count / 3 : 0;
+    }
+  } else {
+    for (const o of blossom) o.visible = true;
+  }
+
+  // Petals sway; the trunk and branches do not. At this strength the drift is
+  // a few centimetres, which reads as air moving rather than as petals coming
+  // loose from their twigs.
+  if (leafMat && uniforms) addWind(leafMat, uniforms, 0.036);
+
+  group.userData.leafCount = leafCount;
+  return { group, barkMat, leafMat, leafCount, imported: true };
+}

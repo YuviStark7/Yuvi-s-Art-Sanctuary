@@ -53,7 +53,15 @@ export const CURTAIN = {
 
 export const TREE = {
   height: 5.35,
-  trunkRadius: 0.215
+  trunkRadius: 0.215,
+
+  /* Which tree stands on the island.
+   *   'blossom' — the imported model in models/blossom-tree.glb
+   *   'grown'   — the one nature.js grows from code
+   * If the model fails to load for any reason the grown tree takes over, so
+   * the sanctuary never comes up empty. */
+  model: 'blossom',
+  modelUrl: './models/blossom-tree.glb'
 };
 
 // Concentric seating: partial arcs, deliberately broken so you can walk through.

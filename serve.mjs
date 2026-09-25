@@ -22,7 +22,7 @@ const TYPES = {
   '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml',
-  '.avif': 'image/avif', '.gif': 'image/gif', '.ico': 'image/x-icon'
+  '.avif': 'image/avif', '.gif': 'image/gif', '.ico': 'image/x-icon', '.glb': 'model/gltf-binary'
 };
 
 createServer(async (req, res) => {

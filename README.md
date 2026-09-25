@@ -222,6 +222,76 @@ the pool of light it throws on the floor.
 
 ---
 
+## The tree, and importing your own models
+
+The tree on the island is `models/blossom-tree.glb`, cut out of a downloaded
+tree pack. Which tree stands there is one line in [`js/config.js`](js/config.js):
+
+```js
+TREE.model = 'blossom'   // the imported model
+TREE.model = 'grown'     // the one nature.js grows from code
+```
+
+If the file is missing or fails to download the grown tree takes over on its
+own, so a bad deploy never leaves the island bare.
+
+### Bringing a tree pack down to size
+
+The pack this came from is 80 MB: fourteen trees merged into three materials,
+with five 4096-pixel textures. [`tools/extract-tree.mjs`](tools/extract-tree.mjs)
+pulls a single tree out of it and gets the result to **4.3 MB**:
+
+```bash
+node tools/extract-tree.mjs "path/to/pack.glb" models/blossom-tree.glb 5.35
+```
+
+The last number is the finished height in metres. What it does:
+
+- **Separates one tree from the merge.** The canopies are already one mesh per
+  tree, but every trunk in the pack shares two meshes, so trunks are split into
+  connected components and only those standing under the chosen canopy are
+  kept. The nearest rejected component is 1.7 units clear, which is the margin
+  that makes the cut safe.
+- **Throws away three of the five textures.** The leaf map turned out to be
+  pure pink noise with no leaf shapes in it, and the metallic-roughness maps
+  are flat white in the two channels glTF actually reads. Only bark colour and
+  bark normal carry information; they are resampled to 1024 and graded down to
+  sit in the concrete palette. Needs `ffmpeg` on your PATH.
+- **Bakes petal colour and ambient occlusion into vertex colours.** Each petal
+  cluster is a separate connected component, so it gets one coherent tint
+  chosen from a blossom palette and shaded by how buried it is — measured by
+  tracing rays through a density grid built from the canopy itself. That is why
+  the inside of the tree is darker than its sunlit edge, and why the canopy
+  needs no texture at all.
+- **Re-frames it** Y-up, trunk base at the origin, scaled to the height you ask
+  for.
+
+The canopy ships as two layers. The low quality preset hides the second, which
+halves the canopy from 128,000 triangles to 70,000.
+
+### Importing a character
+
+[`tools/rig-figure.mjs`](tools/rig-figure.mjs) rigs an unrigged T-pose body
+onto the sanctuary's own 17-bone skeleton — it finds the landmarks, lays the
+bone chain out in the mesh's proportions, weights the vertices against the bone
+segments, and writes inverse-bind matrices from the T-pose so the arms fall to
+the sides on their own and every animation already written drives it unchanged.
+
+It works, but be careful what you feed it. A **base mesh** sold for sculpting is
+not a character: the one tried here had no skeleton, no UV coordinates at all
+(so nothing can ever be painted on it), no clothes, and a completely blank head
+with no facial features. Rigging it produced a bald, faceless, naked figure.
+
+If you want to replace the studio figure, look for a model that says all of:
+
+- **rigged** or **skinned**, ideally humanoid/Mixamo-compatible
+- **clothed**, or at least with separate garment meshes
+- **textured**, with a face — check the thumbnails show a face, not grey clay
+- **.glb or .gltf** available, not only .blend/.max/.fbx
+- under about 15 MB once textures are counted
+
+---
+
 ## How it is put together
 
 ```
@@ -233,7 +303,8 @@ js/
   textures.js       concrete, stone, foliage, water and ink, drawn procedurally
   architecture.js   the shell, its openings, the floor, seating, side chambers
   water.js          the pool surface, the falling curtain, mist, light shafts
-  nature.js         the island and the tree
+  nature.js         the island, the grown tree and the imported one
+  models.js         loading imported .glb files, and keeping them cached
   gallery.js        where the work hangs, how it is lit and labelled
   wardrobe.js       ← brand placements go here
   character.js      the figure, its clothes and how it moves
@@ -245,6 +316,8 @@ js/
   audio.js          synthesised water and room tone
   ui.js             entrance, pause menu, the reading panel
   main.js           assembly and the frame loop
+models/             imported .glb models (the blossom tree)
+tools/              offline scripts: cutting a tree out of a pack, rigging a figure
 serve.mjs           tiny local preview server (not used by the published site)
 start.cmd / .sh     double-click to preview locally
 vendor/three/       three.js r185 (MIT), vendored so nothing is fetched at runtime
@@ -266,6 +339,12 @@ A few decisions worth knowing about if you go poking around:
   as the dome narrows, and either way it smears into radial streaks around the
   oculus. Projecting on all three axes and blending by the normal sidesteps it,
   and gives the swept seating, which carries no UVs at all, a surface for free.
+- **The imported tree carries its lighting in its vertices.** Its canopy has no
+  texture and no UV coordinates: petal tint and ambient occlusion are baked into
+  vertex colours by `tools/extract-tree.mjs`, which is both far smaller than a
+  texture and free to shade. The model is owned by the cache in `models.js` and
+  survives a quality rebuild, so `disposeWorld()` steps over anything tagged
+  `userData.shared` — without that, changing quality would empty the island.
 - **The dome casts its own shadow**, so daylight only reaches the floor through
   the openings. The building and the sun never move, so the shadow map is drawn
   once at load and then frozen — the pools of light on the floor are free.

@@ -7,11 +7,12 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-import { HALL, OCULUS, POOL, CURTAIN, PLAYER, RENDER, PALETTE, CAMERA, WISHING } from './config.js';
+import { HALL, OCULUS, POOL, CURTAIN, PLAYER, RENDER, PALETTE, CAMERA, WISHING, TREE } from './config.js';
 import * as TEX from './textures.js';
 import { buildSanctuary } from './architecture.js';
 import { buildPool, buildWaterSurface, buildCurtain, buildMist, buildLightShaft } from './water.js';
-import { buildIsland, buildTree } from './nature.js';
+import { buildIsland, buildTree, buildImportedTree } from './nature.js';
+import { loadModel, modelTextures } from './models.js';
 import { buildGallery, loadArtworkTextures } from './gallery.js';
 import { Player } from './player.js';
 import { Character } from './character.js';
@@ -33,7 +34,7 @@ const QUALITY = {
     bloom: true, bloomStrength: 0.34,
     shadowMap: 4096, chamberShadows: true,
     mist: 1100, msaa: 4, maxPixelRatio: 2,
-    artworkGlow: 0.05, shafts: 4
+    artworkGlow: 0.05, shafts: 4, canopyLayers: 2
   },
   medium: {
     shellRings: 118, shellSegments: 280,
@@ -41,7 +42,7 @@ const QUALITY = {
     bloom: true, bloomStrength: 0.30,
     shadowMap: 2048, chamberShadows: false,
     mist: 650, msaa: 0, maxPixelRatio: 1.5,
-    artworkGlow: 0.07, shafts: 3
+    artworkGlow: 0.07, shafts: 3, canopyLayers: 2
   },
   low: {
     shellRings: 86, shellSegments: 208,
@@ -49,7 +50,7 @@ const QUALITY = {
     bloom: false, bloomStrength: 0,
     shadowMap: 1024, chamberShadows: false,
     mist: 260, msaa: 0, maxPixelRatio: 1,
-    artworkGlow: 0.12, shafts: 2
+    artworkGlow: 0.12, shafts: 2, canopyLayers: 1
   }
 };
 
@@ -58,6 +59,7 @@ const QUALITY = {
 const app = {
   qualityName: matchMedia('(pointer: coarse)').matches ? 'medium' : 'high',
   mode: 'gate',                      // gate → wardrobe → visit
+  treeModel: null,                   // models/blossom-tree.glb, once fetched
   outfit: Object.assign({}, DEFAULT_OUTFIT),
   textures: null,
   artworkTextures: null,
@@ -199,6 +201,7 @@ function sharedTextures() {
     else for (const t of Object.values(v)) add(t);
   }
   for (const a of app.artworkTextures || []) add(a && a.tex);
+  if (app.treeModel) modelTextures(app.treeModel.scene, keep);
   return keep;
 }
 
@@ -210,6 +213,9 @@ function disposeWorld() {
   app.world.root.traverse((o) => {
     if (o.isReflector && o.dispose) o.dispose();
     if (o.isLight && o.shadow && o.shadow.dispose) o.shadow.dispose();
+    // Imported models are cached and reused across quality rebuilds; their
+    // geometry and materials belong to models.js, not to this world.
+    if (o.userData.shared) return;
     if (o.geometry) o.geometry.dispose();
     if (!o.material) return;
     for (const mat of (Array.isArray(o.material) ? o.material : [o.material])) {
@@ -227,6 +233,12 @@ function disposeWorld() {
       mat.dispose();
     }
   });
+
+  if (app.world.tree && app.world.tree.imported && app.treeModel) {
+    for (const child of app.world.tree.group.children.slice()) {
+      app.treeModel.scene.add(child);
+    }
+  }
 
   scene.remove(app.world.root);
   if (app.world.envTarget) app.world.envTarget.dispose();
@@ -268,7 +280,9 @@ function buildWorld(quality) {
   const island = buildIsland(app.textures, 88);
   root.add(island.group);
 
-  const tree = buildTree(app.textures, windUniforms, 2024);
+  const tree = app.treeModel
+    ? buildImportedTree(app.treeModel, windUniforms, quality)
+    : buildTree(app.textures, windUniforms, 2024);
   tree.group.position.y = 0.50;
   root.add(tree.group);
   animated.push(windUniforms);
@@ -781,9 +795,24 @@ async function boot() {
     ui.progress(0.58 + f * 0.12, 'hanging the work');
   });
 
-  ui.progress(0.72, 'pressing the clothes');
+  ui.progress(0.70, 'pressing the clothes');
   await nextFrame();
   app.textures.brandGraphics = await loadBrandGraphics();
+
+  if (TREE.model === 'blossom') {
+    ui.progress(0.74, 'planting the tree');
+    await nextFrame();
+    try {
+      app.treeModel = await loadModel(TREE.modelUrl, (f) => {
+        ui.progress(0.74 + f * 0.06, 'planting the tree');
+      });
+    } catch (err) {
+      // A missing or broken model is not worth failing the whole visit over;
+      // nature.js can still grow one.
+      console.warn('blossom tree unavailable, growing one instead:', err);
+      app.treeModel = null;
+    }
+  }
 
   character = new Character(app.textures);
   character.setOutfit(app.outfit);

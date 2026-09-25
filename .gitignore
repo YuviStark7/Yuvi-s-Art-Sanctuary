@@ -1,0 +1,13 @@
+.DS_Store
+Thumbs.db
+node_modules/
+.claude/*.png
+
+# Raw source models. These are the big downloads the tools in tools/ cut down;
+# only the finished models/*.glb needs to be published. The tree pack alone is
+# 77 MB, which would otherwise be pushed to GitHub for nothing.
+3D Objects/
+3D objects/
+
+# Local Claude Code settings (personal machine state, not project config)
+.claude/settings.local.json
