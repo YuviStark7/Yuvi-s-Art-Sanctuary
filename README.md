@@ -292,6 +292,30 @@ If you want to replace the studio figure, look for a model that says all of:
 
 ---
 
+## The daily improvement routine
+
+A scheduled cloud agent runs every morning at **07:00 Berlin**, takes the first
+item from [`IMPROVEMENTS.md`](IMPROVEMENTS.md), implements it on a branch and
+opens a pull request. It never merges and never pushes to `main`.
+
+**To steer it, edit `IMPROVEMENTS.md`.** Move an item to the top of the Queue to
+get it next, add your own in the same shape, or empty the Queue to make it stop
+proposing changes and only suggest.
+
+Two things worth knowing:
+
+- **It cannot see the render.** It runs in a sandbox with no browser, so it can
+  check that the code parses and that nothing grew unexpectedly, but it cannot
+  tell whether the room looks better. That is why every queue item carries a
+  "how to judge it" note and why every PR has to say what it could not verify.
+  Treat its pull requests as drafts to look at, never as finished work.
+- **It only has this repository.** No connectors, no access to anything else.
+
+Manage it at <https://claude.ai/code/routines> — that is also the only place it
+can be paused or deleted.
+
+---
+
 ## How it is put together
 
 ```
