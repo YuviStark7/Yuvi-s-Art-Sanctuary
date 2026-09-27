@@ -105,7 +105,15 @@ export const WISHING = {
 export const RENDER = {
   fov: 62,
   near: 0.06,
-  far: 220
+
+  /* Nothing in the building reaches further than 21.3 m from the origin — the
+   * back wall of the deeper side chamber — so even standing in one chamber and
+   * looking clean across the hall stays under 43 m. The range matters because
+   * depth precision is spread across it, and anything reading the depth buffer
+   * works in deltas normalised over `far - near`: at the old 220 m a centimetre
+   * came to 0.000045, which is what made addon defaults meaningless here. The
+   * sun's shadow camera keeps its own far plane, in main.js. */
+  far: 60
 };
 
 // Light of a still afternoon: cool sky bounce, warm sun through the openings.
