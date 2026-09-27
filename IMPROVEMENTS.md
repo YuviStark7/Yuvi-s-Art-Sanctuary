@@ -16,23 +16,7 @@ depends on you to judge the result.
 
 ## Queue
 
-### 1. The camera far plane is ten times too far away
-`RENDER.far` in [`js/config.js`](js/config.js) is **220 m**. Measured in the
-running scene, every mesh in the building fits within **22.5 m** of the origin
-(furthest: the shell itself). Nothing needs that range, and it is not free:
-depth precision is spread over ten times the distance it has to be, which hurts
-anything reading the depth buffer, the shadow camera included.
-
-Bring it down to something that comfortably contains the scene — 60 m leaves
-plenty of headroom — and check the sky disc, the oculus shaft and the light
-shafts do not clip at the new value.
-
-*How to judge it:* look up through the oculus, then stand in a side chamber and
-look back out through the doorway. Nothing should disappear at the edges. This
-one is largely measurable rather than visual: compare the scene bounding box
-against `RENDER.far` and confirm the margin.
-
-### 2. Ambient occlusion in the room
+### 1. Ambient occlusion in the room
 **Read this before starting — a previous attempt failed and here is what it
 found, so the next one does not repeat it.**
 
@@ -56,14 +40,15 @@ Two units traps worth knowing, whatever you try next:
 
 - `kernelRadius` is in **view-space metres**.
 - `minDistance` / `maxDistance` are **not** metres. They are normalised over
-  `far - near`, so with `far = 220` one centimetre is `0.000045`. The addon's
-  own defaults (`0.005` / `0.1`) mean 1.1 m and 22 m in this scene, which is
-  why they behave nonsensically here.
+  `far - near`, so at the current `far = 60` one centimetre is `0.00017`. The
+  addon's own defaults (`0.005` / `0.1`) mean 0.30 m and 6.0 m in this scene —
+  workable now, where at the old `far = 220` they meant 1.1 m and 22 m, which is
+  why they behaved nonsensically then.
 
 So, in order:
 
-1. Do item 1 first. The far plane may well be the underlying cause, and it is
-   worth doing regardless.
+1. The far plane has since come down to 60 m, which may well have been the
+   underlying cause — so start by retrying the measurements above against it.
 2. Retry `SSAOPass` with the corrected range, or try `GTAOPass`, which captures
    depth and normals differently.
 3. If screen space keeps fighting back, **bake it instead**. The building never
@@ -77,7 +62,7 @@ So, in order:
 concentric benches and at the pool lip. Those junctions should darken. If the
 whole room turns muddy, the radius is too large.
 
-### 3. Light through the blossom
+### 2. Light through the blossom
 The petals are opaque. Real blossom glows where the sun is behind it, and the
 canopy sits directly under the oculus, which is the best possible place for the
 effect.
@@ -90,7 +75,7 @@ in vertex colours, so tint the back-scatter from that.
 *How to judge it:* stand under the canopy and look up toward the oculus. Petals
 between you and the light should warm and brighten at the edges.
 
-### 4. Softer shadow edges
+### 3. Softer shadow edges
 Shadows are currently a single hard-ish map. A PCSS-style or wider PCF filter
 would suit overcast light much better — contact-sharp near the floor, soft
 further away.
@@ -103,7 +88,7 @@ frame. Keep that property.
 should have a soft edge, and the tree's shadow on the island should stay crisp
 where trunk meets rock.
 
-### 5. Finer concrete up close
+### 4. Finer concrete up close
 The concrete is procedural and convincing at a distance, but soft when you walk
 up to a wall. Add a detail normal layered at a much higher frequency on top of
 the existing triplanar projection, fading in as the camera gets close.
@@ -114,7 +99,7 @@ larger canvas costs start-up time on every visit.
 *How to judge it:* walk right up to a wall between two artworks. It should
 retain fine tooth rather than going smooth.
 
-### 6. A loading screen worth the wait
+### 5. A loading screen worth the wait
 The blossom tree is 4.3 MB and downloads behind the existing progress gate.
 Right now "planting the tree" is a bare progress step. Make the wait feel
 intentional rather than broken on a slow connection.
@@ -124,7 +109,7 @@ Nothing heavy — the gate already exists in `js/ui.js`.
 *How to judge it:* throttle to Slow 3G in devtools and reload. It should read
 as deliberate, never as a hang.
 
-### 7. Real reflection and refraction in the pool
+### 6. Real reflection and refraction in the pool
 The water currently uses an analytic reflection — a pale dome with the oculus
 punched into it — rather than a true reflection pass. Upgrade it, and add
 caustics on the pool basin.
@@ -140,6 +125,11 @@ and moving light should play across the basin floor.
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### The camera far plane is ten times too far away
+`RENDER.far` 220 m → 60 m. The scene measures 21.3 m from the origin at its
+furthest (the back wall of the deeper side chamber), so 60 m holds the whole
+room with room to spare even from inside a chamber. (PR #1)
 
 ---
 
