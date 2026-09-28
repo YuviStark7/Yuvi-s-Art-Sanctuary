@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 import { HALL, OCULUS, POOL, CURTAIN, PLAYER, RENDER, PALETTE, CAMERA, WISHING, TREE } from './config.js';
@@ -32,6 +33,7 @@ const QUALITY = {
     shellRings: 150, shellSegments: 352,
     floorReflection: true, reflectionSize: 1024,
     bloom: true, bloomStrength: 0.34,
+    ao: true, aoKernel: 24,
     shadowMap: 4096, chamberShadows: true,
     mist: 1100, msaa: 4, maxPixelRatio: 2,
     artworkGlow: 0.05, shafts: 4, canopyLayers: 2
@@ -40,6 +42,7 @@ const QUALITY = {
     shellRings: 118, shellSegments: 280,
     floorReflection: true, reflectionSize: 512,
     bloom: true, bloomStrength: 0.30,
+    ao: false, aoKernel: 12,
     shadowMap: 2048, chamberShadows: false,
     mist: 650, msaa: 0, maxPixelRatio: 1.5,
     artworkGlow: 0.07, shafts: 3, canopyLayers: 2
@@ -48,10 +51,32 @@ const QUALITY = {
     shellRings: 86, shellSegments: 208,
     floorReflection: false, reflectionSize: 256,
     bloom: false, bloomStrength: 0,
+    ao: false, aoKernel: 0,
     shadowMap: 1024, chamberShadows: false,
     mist: 260, msaa: 0, maxPixelRatio: 1,
     artworkGlow: 0.12, shafts: 2, canopyLayers: 1
   }
+};
+
+/* Ambient occlusion. One broad hemisphere light is right for overcast
+ * daylight, but it reaches into every corner equally, so the wall's foot, the
+ * underside of a bench and the pool lip come out as bright as the open floor.
+ *
+ * The two range figures are the trap. `kernelRadius` is in view-space metres,
+ * but the addon's `minDistance` and `maxDistance` are fractions of the depth
+ * buffer, normalised over `far - near` — so they are written here in metres
+ * and converted once, where the units are still visible. The addon's own
+ * defaults work out to 0.30 m and 6.0 m against the current 60 m far plane,
+ * which is far too coarse a band to catch a skirting shadow.
+ *
+ * It is on at high only. The pass re-renders the room to collect depth, which
+ * is half as many draw calls again every frame, and medium is what a phone
+ * gets by default — so medium keeps the kernel it would use and waits for
+ * someone to watch a frame counter on a real device before turning it on. */
+const AO = {
+  radius: 1.20,     // how far a surface reaches for occluders
+  minDepth: 0.015,  // below this a hit is the surface shading itself
+  maxDepth: 1.60    // above this the occluder is a different part of the room
 };
 
 /* ----------------------------------------------------------------- app -- */
@@ -94,7 +119,7 @@ const camera = new THREE.PerspectiveCamera(
   RENDER.fov, window.innerWidth / window.innerHeight, RENDER.near, RENDER.far
 );
 
-let composer = null, bloomPass = null, renderPass = null;
+let composer = null, bloomPass = null, renderPass = null, aoPass = null;
 
 const ambience = new Ambience();
 const player = new Player(camera, canvas, { benchBands: [] });
@@ -117,6 +142,7 @@ function setupComposer(quality) {
   composer = new EffectComposer(renderer, target);
   renderPass = new RenderPass(scene, camera);
   composer.addPass(renderPass);
+  aoPass = quality.ao ? addAmbientOcclusion(size, quality) : null;
   if (quality.bloom) {
     bloomPass = new UnrealBloomPass(
       new THREE.Vector2(size.w, size.h), quality.bloomStrength, 0.62, 1.00
@@ -125,6 +151,56 @@ function setupComposer(quality) {
   } else bloomPass = null;
   composer.addPass(new OutputPass());
   composer.setSize(size.w, size.h);
+}
+
+/* The pass collects depth by re-rendering the room with a MeshNormalMaterial
+ * forced over every material, which throws away each one's own `depthWrite`.
+ * The falling curtain, the light shafts and the drifting smoke all rely on
+ * being excluded from the depth buffer; under the override they stand in it
+ * as solidly as concrete, and from the entrance that drops a shaft-shaped cone
+ * across the whole middle of the room. So: whatever does not write depth when
+ * the room is drawn does not occlude here either.
+ *
+ * The addon offers no hook for this, only the two private methods it uses to
+ * hide points and lines for the same reason. They are safe to lean on because
+ * three.js is vendored at a pinned r185 and cannot move under us. */
+class RoomOcclusion extends SSAOPass {
+
+  constructor(scene, camera, width, height, kernelSize) {
+    super(scene, camera, width, height, kernelSize);
+    this.passedOver = [];
+  }
+
+  _overrideVisibility() {
+    super._overrideVisibility();
+    this.scene.traverse((object) => {
+      if (!object.visible || !object.isMesh) return;
+      const mats = Array.isArray(object.material) ? object.material : [object.material];
+      if (!mats.some((m) => m && m.depthWrite === false)) return;
+      object.visible = false;
+      this.passedOver.push(object);
+    });
+  }
+
+  _restoreVisibility() {
+    for (const object of this.passedOver) object.visible = true;
+    this.passedOver.length = 0;
+    super._restoreVisibility();
+  }
+
+}
+
+/* Chained straight after the RenderPass, which is where it belongs: it has
+ * `needsSwap = false` and multiplies itself into the read buffer while the
+ * image is still linear, so the occlusion darkens light rather than pixels. */
+function addAmbientOcclusion(size, quality) {
+  const pass = new RoomOcclusion(scene, camera, size.w, size.h, quality.aoKernel);
+  const range = RENDER.far - RENDER.near;
+  pass.kernelRadius = AO.radius;
+  pass.minDistance = AO.minDepth / range;
+  pass.maxDistance = AO.maxDepth / range;
+  composer.addPass(pass);
+  return pass;
 }
 
 function getSize() { return { w: window.innerWidth, h: window.innerHeight }; }
@@ -597,7 +673,14 @@ const ui = new UI({
   onVolume: (v) => ambience.setVolume(v),
   onSensitivity: (v) => { player.sensitivity = v; },
   onInvert: (v) => { player.invertY = v; },
-  onFov: (v) => { camera.fov = v; camera.updateProjectionMatrix(); },
+  onFov: (v) => {
+    camera.fov = v;
+    camera.updateProjectionMatrix();
+    // The AO pass keeps its own copy of the projection matrix and only
+    // refreshes it on resize, so without this the occlusion would go on
+    // unprojecting against the field of view the visitor just left.
+    if (aoPass) aoPass.setSize(aoPass.width, aoPass.height);
+  },
   onQuality: (name) => changeQuality(name)
 });
 
