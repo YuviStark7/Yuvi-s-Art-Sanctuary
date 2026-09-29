@@ -10,6 +10,7 @@
 import * as THREE from 'three';
 import { POOL, CURTAIN, OCULUS, HALL, PALETTE } from './config.js';
 import { makeTriplanar } from './architecture.js';
+import { roomOccluders, bakeOcclusion } from './occlusion.js';
 
 const GLSL_NOISE = /* glsl */`
   float hash11( float p ) {
@@ -41,7 +42,7 @@ const GLSL_NOISE = /* glsl */`
 
 /* ---------------------------------------------------------- pool basin -- */
 
-export function buildPool(textures) {
+export function buildPool(textures, quality) {
   const group = new THREE.Group();
   group.name = 'pool';
 
@@ -64,11 +65,43 @@ export function buildPool(textures) {
     new THREE.Vector2(POOL.radius + 0.05, 0.0),
     new THREE.Vector2(POOL.radius + POOL.lipWidth, 0.0)
   ];
-  const basin = new THREE.Mesh(new THREE.LatheGeometry(pts, 144), basinMat);
+  /* The basin is read through the water, where the coins settle, so it is
+   * worth shading — but the profile above is six points, and a contact shadow
+   * stretched across four metres of basin floor reads as a gradient rather
+   * than as a corner. Splitting the long runs costs nothing and it stays the
+   * same shape, since every new point lands on a straight it already had. */
+  const shaded = !!(quality && quality.bakedAO);
+  const basin = new THREE.Mesh(
+    new THREE.LatheGeometry(shaded ? subdivide(pts, 0.16) : pts, 144), basinMat);
   basin.receiveShadow = true;
+  if (shaded) {
+    // the lathe is revolved inside out, which is why it is drawn double-sided
+    basinMat.vertexColors = true;
+    bakeOcclusion(basin, roomOccluders(), true);
+  }
   group.add(basin);
 
   return { group, basinMat };
+}
+
+/**
+ * Splits a revolved profile so the shading has vertices to sit in. It wants
+ * them where a run meets the next one at a corner and not in the middle of
+ * four metres of flat basin floor, so the spacing opens out from `step` at
+ * each end toward the centre.
+ */
+function subdivide(pts, step) {
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    const run = a.distanceTo(b);
+    const cuts = [];
+    for (let d = step; d < run / 2; d *= 1.55) cuts.push(d / run, 1 - d / run);
+    cuts.sort((x, y) => x - y);
+    for (const t of cuts) out.push(a.clone().lerp(b, t));
+    out.push(b.clone());
+  }
+  return out;
 }
 
 /* -------------------------------------------------------- water surface -- */

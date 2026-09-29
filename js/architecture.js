@@ -12,8 +12,13 @@
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { HALL, OCULUS, SKYLIGHTS, ALCOVES, POOL, BENCHES, PALETTE } from './config.js';
+import { roomOccluders, bakeOcclusion } from './occlusion.js';
 
 const TAU = Math.PI * 2;
+
+// The fillet where the wall lands on the floor. The floor is tessellated
+// around it as well as revolved through it, so both want the same number.
+const COVE = 0.30;
 
 function wrapAngle(a) {
   while (a > Math.PI) a -= TAU;
@@ -29,7 +34,7 @@ function wrapAngle(a) {
  */
 export function buildProfile() {
   const R = HALL.radius;
-  const cove = 0.30;                 // soft fillet where wall meets floor
+  const cove = COVE;                 // soft fillet where wall meets floor
   const pts = [];
 
   // base cove
@@ -320,6 +325,78 @@ function buildSkyCap(outer, thickness) {
   return { geo, centre };
 }
 
+/* --------------------------------------------------------------- floor -- */
+
+/**
+ * Where to put the rings of the floor disc.
+ *
+ * A flat disc needs almost no vertices, but the contact shading is carried in
+ * them, so it needs them wherever there is something to shade against and
+ * nowhere else. `detailed` clusters them at the foot of the wall and either
+ * side of every bench, and leaves the open floor between as coarse as it has
+ * always been.
+ */
+function floorRadii(inner, outer, detailed) {
+  const radii = [];
+  if (!detailed) {
+    for (let i = 0; i <= 6; i++) radii.push(inner + (outer - inner) * (i / 6));
+    return radii;
+  }
+
+  const foot = HALL.radius - COVE;             // where the fillet lands
+  const set = new Set([inner, outer]);
+  for (let r = inner + 1.6; r < foot - 0.9; r += 1.6) set.add(r);
+
+  const edges = [foot];
+  for (const band of BENCHES) {
+    edges.push(band.radius - band.depth / 2, band.radius + band.depth / 2);
+  }
+  for (const e of edges) {
+    for (const d of [-0.85, -0.55, -0.34, -0.18, -0.07, 0, 0.07, 0.18, 0.34, 0.55, 0.85]) {
+      const r = e + d;
+      // past the foot of the wall the floor is buried under the fillet, so
+      // nothing out there is worth a ring of its own
+      if (r > inner + 0.02 && r <= Math.min(foot, outer - 0.02)) set.add(r);
+    }
+  }
+  return Array.from(set).sort((a, b) => a - b);
+}
+
+/**
+ * A ring disc with the rings placed by hand. Identical to RingGeometry in
+ * every other respect — same plane, same winding, same UVs — so the floor
+ * texture lands exactly where it did.
+ */
+function ringDisc(radii, segs) {
+  const pos = [], nrm = [], uv = [], index = [];
+  const outer = radii[radii.length - 1];
+
+  for (const radius of radii) {
+    for (let i = 0; i <= segs; i++) {
+      const t = (i / segs) * TAU;
+      const x = radius * Math.cos(t), y = radius * Math.sin(t);
+      pos.push(x, y, 0);
+      nrm.push(0, 0, 1);
+      uv.push((x / outer + 1) / 2, (y / outer + 1) / 2);
+    }
+  }
+  for (let j = 0; j < radii.length - 1; j++) {
+    for (let i = 0; i < segs; i++) {
+      const a = i + j * (segs + 1);
+      const b = a + segs + 1, c = a + segs + 2, d = a + 1;
+      index.push(a, b, d, b, c, d);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(index);
+  geo.computeBoundingSphere();
+  return geo;
+}
+
 /* -------------------------------------------------------- sweep helpers -- */
 
 /**
@@ -537,6 +614,11 @@ export function buildSanctuary(textures, quality) {
   for (const s of SKYLIGHTS) openings.push(ellipseOpening(s, profile));
   for (const a of ALCOVES) openings.push(archOpening(a, profile));
 
+  /* Contact shading, settled once here rather than chased every frame. Only
+   * the concrete that a visitor walks up to carries it: the shell, the floor
+   * and the seating. Everything they are baked against lives in occlusion.js. */
+  const occluders = quality.bakedAO ? roomOccluders() : null;
+
   /* ---- materials ---- */
   const concrete = makeTriplanar(new THREE.MeshStandardMaterial({
     color: PALETTE.concrete,
@@ -570,6 +652,7 @@ export function buildSanctuary(textures, quality) {
   shell.name = 'shell';
   shell.receiveShadow = true;
   shell.castShadow = false;
+  if (occluders) bakeOcclusion(shell, occluders);
   group.add(shell);
 
   /* ---- skylight wells and their sky ---- */
@@ -632,11 +715,12 @@ export function buildSanctuary(textures, quality) {
     t.needsUpdate = true;
   }
 
-  const floorGeo = new THREE.RingGeometry(POOL.radius, HALL.radius + 0.4, 160, 6);
+  const floorGeo = ringDisc(floorRadii(POOL.radius, HALL.radius + 0.4, !!occluders), 160);
   const floor = new THREE.Mesh(floorGeo, floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   floor.name = 'floor';
+  if (occluders) bakeOcclusion(floor, occluders);
   group.add(floor);
 
   let reflector = null;
@@ -671,6 +755,13 @@ export function buildSanctuary(textures, quality) {
     roughness: 0.88,
     metalness: 0.0
   }), 1.7);
+  if (occluders) {
+    // every mesh wearing one of these is baked below, and a material asking
+    // for vertex colours from a mesh that has none renders black
+    concrete.vertexColors = true;
+    floorMat.vertexColors = true;
+    benchMat.vertexColors = true;
+  }
   const benchBands = [];
   for (const band of BENCHES) {
     const h = band.height, d = band.depth / 2, ch = 0.045;
@@ -682,6 +773,7 @@ export function buildSanctuary(textures, quality) {
       const mesh = new THREE.Mesh(sweepProfile(section, band.radius, a0, a1, segs2, true), benchMat);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      if (occluders) bakeOcclusion(mesh, occluders);
       group.add(mesh);
       benchBands.push({ radius: band.radius, half: d + 0.05, a0, a1, height: h });
     }
@@ -730,7 +822,14 @@ export function buildSanctuary(textures, quality) {
     // chamber floor — run it back under the doorway so no gap opens up
     // where it meets the floor of the hall
     const chDepth = spec.depth + HALL.shellThickness + 1.2;
-    const chGeo = new THREE.PlaneGeometry(spec.width + 0.9, chDepth);
+    // enough vertices to hold a contact shadow along the chamber walls; two
+    // triangles would spread it across the whole room as one gradient
+    const chWidth = spec.width + 0.9;
+    const chStep = 0.32;
+    const chGeo = occluders
+      ? new THREE.PlaneGeometry(chWidth, chDepth,
+          Math.ceil(chWidth / chStep), Math.ceil(chDepth / chStep))
+      : new THREE.PlaneGeometry(chWidth, chDepth);
     chGeo.rotateX(-Math.PI / 2);
     const chFloor = new THREE.Mesh(chGeo, floorMat);
     chFloor.rotation.y = Math.PI / 2 - spec.around;
@@ -738,6 +837,7 @@ export function buildSanctuary(textures, quality) {
       .addScaledVector(forward, spec.depth / 2 - HALL.shellThickness / 2 - 0.6);
     chFloor.position.y = 0.002;
     chFloor.receiveShadow = true;
+    if (occluders) bakeOcclusion(chFloor, occluders);
     group.add(chFloor);
 
     chambers.push({
