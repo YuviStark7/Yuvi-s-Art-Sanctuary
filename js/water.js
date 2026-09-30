@@ -8,8 +8,8 @@
  * way it does in the reference image.
  */
 import * as THREE from 'three';
-import { POOL, CURTAIN, OCULUS, HALL, PALETTE } from './config.js';
-import { makeTriplanar } from './architecture.js';
+import { POOL, CURTAIN, OCULUS, HALL, PALETTE, OCCLUSION } from './config.js';
+import { makeTriplanar, makeRoomOcclusion } from './architecture.js';
 
 const GLSL_NOISE = /* glsl */`
   float hash11( float p ) {
@@ -41,7 +41,7 @@ const GLSL_NOISE = /* glsl */`
 
 /* ---------------------------------------------------------- pool basin -- */
 
-export function buildPool(textures) {
+export function buildPool(textures, quality) {
   const group = new THREE.Group();
   group.name = 'pool';
 
@@ -53,6 +53,10 @@ export function buildPool(textures) {
     metalness: 0.0,
     side: THREE.DoubleSide
   }), 2.6);
+
+  // the basin is the deepest crease a visitor can look into, so it wants the
+  // same corner shading as the hall
+  if (quality.roomAO) makeRoomOcclusion(basinMat, OCCLUSION.reach, OCCLUSION.strength);
 
   // rim, inner wall and floor of the basin in one revolved profile
   const d = POOL.depth;

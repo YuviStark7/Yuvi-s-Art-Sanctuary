@@ -11,9 +11,13 @@
  */
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
-import { HALL, OCULUS, SKYLIGHTS, ALCOVES, POOL, BENCHES, PALETTE } from './config.js';
+import { HALL, OCULUS, SKYLIGHTS, ALCOVES, POOL, BENCHES, PALETTE, OCCLUSION } from './config.js';
 
 const TAU = Math.PI * 2;
+
+// Soft fillet where the wall meets the floor. It is also where the wall
+// actually stands, which is what the corner shading has to measure against.
+const WALL_COVE = 0.30;
 
 function wrapAngle(a) {
   while (a > Math.PI) a -= TAU;
@@ -29,7 +33,7 @@ function wrapAngle(a) {
  */
 export function buildProfile() {
   const R = HALL.radius;
-  const cove = 0.30;                 // soft fillet where wall meets floor
+  const cove = WALL_COVE;
   const pts = [];
 
   // base cove
@@ -474,6 +478,157 @@ export function makeTriplanar(material, scale) {
   return material;
 }
 
+/* ------------------------------------------------------ room occlusion -- */
+
+/**
+ * Darkens the ambient daylight where the building folds in on itself.
+ *
+ * A screen-space pass was tried here first and never produced anything usable.
+ * The room does not need one: it is a known shape, the same closed form the
+ * camera arm is already clamped against. A floor plane that steps down into
+ * the basin, two inward-facing cylinders and the seating arcs describe every
+ * crease a visitor can walk up to, and they are exact at any distance rather
+ * than at whatever the screen happens to resolve.
+ *
+ * Only `reflectedLight.indirectDiffuse` is touched, which here is the broad
+ * hemisphere light standing in for an overcast sky — the one the corners look
+ * flat under. The sun keeps its own frozen shadow map, so the pools of light
+ * on the floor come through unchanged.
+ *
+ * Composes with `makeTriplanar`, which owns the same two hooks.
+ */
+export function makeRoomOcclusion(material, reach, strength) {
+  const seats = [], seatTops = [];
+  for (const band of BENCHES) {
+    for (const [a0, a1] of band.arcs) {
+      seats.push(new THREE.Vector4(band.radius, a0, a1, band.depth / 2));
+      seatTops.push(band.height);
+    }
+  }
+
+  const seatDecl = seats.length ? `
+        uniform vec4 uAoSeat[ ${seats.length} ];
+        uniform float uAoSeatTop[ ${seats.length} ];
+      ` : '';
+
+  // The seating stands on the floor as a solid block, so it darkens the floor
+  // beside it and nothing at all above its own top edge. Distance is measured
+  // in the arc's own radial / along-the-arc frame, which keeps the darkening
+  // running round the end caps instead of stopping short of them.
+  const seatTerm = seats.length ? `
+          float theta = atan( p.z, p.x );
+          for ( int i = 0; i < ${seats.length}; i ++ ) {
+            vec4 seat = uAoSeat[ i ];
+            float top = uAoSeatTop[ i ];
+            if ( p.y >= top || abs( r - seat.x ) > seat.w + uAoReach ) continue;
+
+            float da = mod( theta - seat.y + PI, PI2 ) - PI;
+            float dRad = max( abs( r - seat.x ) - seat.w, 0.0 );
+            float dTan = seat.x * max( max( -da, da - ( seat.z - seat.y ) ), 0.0 );
+            float d = length( vec2( dRad, dTan ) );
+            if ( d < 1e-4 ) continue;
+
+            vec2 mXZ = outward * ( dRad * sign( r - seat.x ) )
+                     + vec2( -outward.y, outward.x ) * ( dTan * ( da < 0.0 ? -1.0 : 1.0 ) );
+            open *= 1.0 - aoFace( n, normalize( vec3( mXZ.x, 0.0, mXZ.y ) ), d )
+                          * clamp( 1.0 - p.y / top, 0.0, 1.0 );
+          }
+      ` : '';
+
+  // Both hooks are called through so anything already on the material keeps
+  // working. They have to be invoked as methods: three.js's own default cache
+  // key reads `this`, and a plain call would hand it undefined.
+  const chained = material.onBeforeCompile;
+  const chainedKey = material.customProgramCacheKey;
+
+  material.onBeforeCompile = function (shader, renderer) {
+    chained.call(this, shader, renderer);
+
+    shader.uniforms.uAoReach = { value: reach };
+    shader.uniforms.uAoStrength = { value: strength };
+    shader.uniforms.uAoHall = { value: new THREE.Vector2(HALL.radius - WALL_COVE, HALL.radius) };
+    shader.uniforms.uAoPool = { value: POOL.radius };
+    shader.uniforms.uAoPoolDepth = { value: POOL.depth };
+    if (seats.length) {
+      shader.uniforms.uAoSeat = { value: seats };
+      shader.uniforms.uAoSeatTop = { value: seatTops };
+    }
+
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `
+        #include <common>
+        varying vec3 vAoPos;
+        varying vec3 vAoNrm;
+      `)
+      .replace('#include <begin_vertex>', `
+        #include <begin_vertex>
+        vAoPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+        vAoNrm = mat3( modelMatrix ) * objectNormal;
+      `);
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `
+        #include <common>
+        uniform float uAoReach;
+        uniform float uAoStrength;
+        uniform vec2 uAoHall;
+        uniform float uAoPool;
+        uniform float uAoPoolDepth;
+        varying vec3 vAoPos;
+        varying vec3 vAoNrm;
+        ${seatDecl}
+
+        // One large flat occluder standing off the shaded point: \`m\` is the
+        // occluder's own outward normal and \`d\` how far away it stands. The
+        // half-space term is exact for a point lying on the occluder itself.
+        // The reach term is not physical — it is what confines the darkening
+        // to creases instead of dimming the room as a whole, and it is the
+        // direct equivalent of a screen-space kernel radius.
+        float aoFace( vec3 n, vec3 m, float d ) {
+          return 0.5 * ( 1.0 - dot( n, m ) )
+               * ( 1.0 - smoothstep( 0.0, uAoReach, max( d, 0.0 ) ) );
+        }
+
+        float roomOcclusion( vec3 p, vec3 n ) {
+          vec2 q = vec2( p.x, p.z );
+          float r = length( q );
+          vec2 outward = r > 1e-4 ? q / r : vec2( 1.0, 0.0 );
+          vec3 inward = vec3( -outward.x, 0.0, -outward.y );
+          float open = 1.0;
+
+          // The floor is not one plane: it steps down into the pool basin.
+          float base = r < uAoPool ? -uAoPoolDepth : 0.0;
+          open *= 1.0 - aoFace( n, vec3( 0.0, 1.0, 0.0 ), p.y - base );
+
+          // The hall wall and the basin's inner wall both face the axis. The
+          // wall leans in at the floor, where the cove is, so it occupies a
+          // band of radius rather than one: standing off it means being inside
+          // the cove foot or outside the face, which is what keeps the doorway
+          // thresholds and the side chambers from stepping abruptly out of the
+          // effect. The basin needs no such band — it is a hole, and its lip
+          // should stay open — so it stops at its own radius.
+          open *= 1.0 - aoFace( n, inward, max( uAoHall.x - r, r - uAoHall.y ) );
+          if ( r < uAoPool ) open *= 1.0 - aoFace( n, inward, uAoPool - r );
+          ${seatTerm}
+          return open;
+        }
+      `)
+      .replace('#include <aomap_fragment>', `
+        #include <aomap_fragment>
+        {
+          vec3 aoNormal = normalize( vAoNrm ) * ( gl_FrontFacing ? 1.0 : -1.0 );
+          reflectedLight.indirectDiffuse *= 1.0 - uAoStrength *
+            ( 1.0 - roomOcclusion( vAoPos, aoNormal ) );
+        }
+      `);
+  };
+
+  material.customProgramCacheKey = function () {
+    return chainedKey.call(this) + '|roomAO' + reach + ',' + strength + ',' + seats.length;
+  };
+  return material;
+}
+
 /* ------------------------------------------------------ reflective floor -- */
 
 const FresnelReflectorShader = {
@@ -744,6 +899,13 @@ export function buildSanctuary(textures, quality) {
       spec, forward, right, origin,
       centre: origin.clone().addScaledVector(forward, spec.depth / 2)
     });
+  }
+
+  /* ---- occlusion in the corners ---- */
+  if (quality.roomAO) {
+    for (const m of [concrete, interiorMat, revealMat, floorMat, benchMat]) {
+      makeRoomOcclusion(m, OCCLUSION.reach, OCCLUSION.strength);
+    }
   }
 
   return {
