@@ -102,6 +102,18 @@ export const WISHING = {
   flightTime: 1.15
 };
 
+/* Ambient occlusion in the corners of the room.
+ *
+ * `reach` is how far out of a crease the darkening carries, in metres. It is
+ * the direct equivalent of a screen-space kernel radius and behaves the same
+ * way: too large and the whole room goes muddy rather than the junctions
+ * reading as junctions. `strength` is how deeply the crease itself darkens,
+ * as a fraction of the ambient daylight — the sun is never touched. */
+export const OCCLUSION = {
+  reach: 0.85,
+  strength: 0.55
+};
+
 export const RENDER = {
   fov: 62,
   near: 0.06,
