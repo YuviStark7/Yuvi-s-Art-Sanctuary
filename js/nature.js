@@ -449,6 +449,69 @@ export function buildTree(textures, uniforms, seed) {
 
 /* ------------------------------------------------ the imported blossom -- */
 
+const PETAL_FALLOFF = 2.6;
+
+/**
+ * Lets the sun through the petals.
+ *
+ * Blossom is thin enough that a petal with the light behind it reads as lit
+ * from within rather than as a silhouette, and the canopy stands directly
+ * under the oculus, which is the one place in this room where that happens.
+ *
+ * Not a subsurface model: a single back-scatter lobe added after the standard
+ * lighting, strongest where the eye looks straight back down a light's own
+ * direction, so it only shows itself when a visitor looks up toward the
+ * opening. The tint is taken from the petal colour and ambient occlusion
+ * already baked into COLOR_0, which means a petal buried deep in the canopy —
+ * dark in those vertex colours — barely lifts, while the ones on the sunlit
+ * edge lift most. That is the thickness term a fuller model would have to go
+ * looking for.
+ *
+ * The frozen shadow map is deliberately not consulted. The canopy casts on
+ * itself, so a shadow test here would cancel exactly the light this term
+ * exists to carry.
+ */
+function addPetalTranslucency(material, strength) {
+  // Both hooks are called through so the wind keeps working. They have to be
+  // invoked as methods: three.js's own default cache key reads `this`, and a
+  // plain call would hand it undefined.
+  const chained = material.onBeforeCompile;
+  const chainedKey = material.customProgramCacheKey;
+
+  material.onBeforeCompile = function (shader, renderer) {
+    chained.call(this, shader, renderer);
+
+    shader.uniforms.uPetalGlow = { value: strength };
+
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `
+        #include <common>
+        uniform float uPetalGlow;
+      `)
+      .replace('#include <lights_fragment_end>', `
+        #include <lights_fragment_end>
+        #if NUM_DIR_LIGHTS > 0
+          IncidentLight petalLight;
+          for ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {
+            getDirectionalLightInfo( directionalLights[ i ], petalLight );
+            // The material is double-sided, so the normal has already been
+            // turned to face the eye; a negative dot with the light means the
+            // light is on the far side of the petal, which is the only case
+            // that transmits anything.
+            float behind = saturate( - dot( geometryNormal, petalLight.direction ) );
+            float toward = pow( saturate( - dot( petalLight.direction, geometryViewDir ) ), ${PETAL_FALLOFF} );
+            reflectedLight.directDiffuse += petalLight.color * material.diffuseColor
+              * ( behind * toward * uPetalGlow * RECIPROCAL_PI );
+          }
+        #endif
+      `);
+  };
+
+  material.customProgramCacheKey = function () {
+    return chainedKey.call(this) + '|petal' + strength;
+  };
+}
+
 /**
  * Dress an imported blossom tree (models/blossom-tree.glb) for the sanctuary.
  *
@@ -517,6 +580,15 @@ export function buildImportedTree(gltf, uniforms, quality) {
   // a few centimetres, which reads as air moving rather than as petals coming
   // loose from their twigs.
   if (leafMat && uniforms) addWind(leafMat, uniforms, 0.036);
+
+  // Off at the low preset, where the canopy is already down to one layer: the
+  // term is cheap but it is paid on every canopy fragment, and the canopy is
+  // most of the screen when a visitor looks up. Re-running this function is
+  // how the hook comes back and addWind above is what clears it, so the preset
+  // number is the whole switch.
+  if (leafMat && quality && quality.petalGlow > 0) {
+    addPetalTranslucency(leafMat, quality.petalGlow);
+  }
 
   group.userData.leafCount = leafCount;
   return { group, barkMat, leafMat, leafCount, imported: true };
