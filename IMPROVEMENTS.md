@@ -72,7 +72,7 @@ Back-scatter on the `Blossom` material, added by overriding `RE_Direct` from
 `onBeforeCompile`, so each light contributes once and arrives already
 attenuated by the frozen shadow map. The glow is tinted by the material's own
 diffuse colour, which is the petal tint and the occlusion already baked into
-COLOR_0. High and medium; off at low via `canopyTranslucency`. (PR #PRNUM —
+COLOR_0. High and medium; off at low via `canopyTranslucency`. (PR #7 —
 and note that PR #6 is still open against this same item, by a route that
 deliberately skips the shadow test. Keep one.)
 
