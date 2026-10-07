@@ -16,20 +16,7 @@ depends on you to judge the result.
 
 ## Queue
 
-### 1. Light through the blossom
-The petals are opaque. Real blossom glows where the sun is behind it, and the
-canopy sits directly under the oculus, which is the best possible place for the
-effect.
-
-Add a cheap translucency term to the `Blossom` material in
-`buildImportedTree()` (`js/nature.js`) — a wrap-lighting or back-scatter tweak
-via `onBeforeCompile`, not a full subsurface model. The petal colour is already
-in vertex colours, so tint the back-scatter from that.
-
-*How to judge it:* stand under the canopy and look up toward the oculus. Petals
-between you and the light should warm and brighten at the edges.
-
-### 2. Softer shadow edges
+### 1. Softer shadow edges
 Shadows are currently a single hard-ish map. A PCSS-style or wider PCF filter
 would suit overcast light much better — contact-sharp near the floor, soft
 further away.
@@ -42,7 +29,7 @@ frame. Keep that property.
 should have a soft edge, and the tree's shadow on the island should stay crisp
 where trunk meets rock.
 
-### 3. Finer concrete up close
+### 2. Finer concrete up close
 The concrete is procedural and convincing at a distance, but soft when you walk
 up to a wall. Add a detail normal layered at a much higher frequency on top of
 the existing triplanar projection, fading in as the camera gets close.
@@ -53,7 +40,7 @@ larger canvas costs start-up time on every visit.
 *How to judge it:* walk right up to a wall between two artworks. It should
 retain fine tooth rather than going smooth.
 
-### 4. A loading screen worth the wait
+### 3. A loading screen worth the wait
 The blossom tree is 4.3 MB and downloads behind the existing progress gate.
 Right now "planting the tree" is a bare progress step. Make the wait feel
 intentional rather than broken on a slow connection.
@@ -63,7 +50,7 @@ Nothing heavy — the gate already exists in `js/ui.js`.
 *How to judge it:* throttle to Slow 3G in devtools and reload. It should read
 as deliberate, never as a hang.
 
-### 5. Real reflection and refraction in the pool
+### 4. Real reflection and refraction in the pool
 The water currently uses an analytic reflection — a pale dome with the oculus
 punched into it — rather than a true reflection pass. Upgrade it, and add
 caustics on the pool basin.
@@ -79,6 +66,15 @@ and moving light should play across the basin floor.
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### Light through the blossom
+Back-scatter on the `Blossom` material, added by overriding `RE_Direct` from
+`onBeforeCompile`, so each light contributes once and arrives already
+attenuated by the frozen shadow map. The glow is tinted by the material's own
+diffuse colour, which is the petal tint and the occlusion already baked into
+COLOR_0. High and medium; off at low via `canopyTranslucency`. (PR #PRNUM —
+and note that PR #6 is still open against this same item, by a route that
+deliberately skips the shadow test. Keep one.)
 
 ### Ambient occlusion in the room
 Solved in closed form instead of in screen space: the room is a known shape, so
