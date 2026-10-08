@@ -153,8 +153,8 @@ and moving light should play across the basin floor.
 rigidly to the wrist, which keeps a vertex exactly where it was authored — so
 both hands sat buried in the pelvis, each on the opposite side from its own
 arm, and swept through it as the arms swung. Carried out to `s * X.shoulder`,
-the way the foot already sits out on `s * X.leg`. (PR #PRNUM — the reversed
-face was not explained by this and stays in the Queue.)
+the way the foot already sits out on `s * X.leg`. (PR #8 — the reversed face
+was not explained by this and stays in the Queue.)
 
 ### Ambient occlusion in the room
 Solved in closed form instead of in screen space: the room is a known shape, so
