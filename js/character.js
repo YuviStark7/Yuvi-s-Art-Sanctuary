@@ -720,7 +720,11 @@ export class Character {
         pos.push(x, y, z);
         const n = new THREE.Vector3(x / (a * a), ny / b, z / (c * c)).normalize();
         nrm.push(n.x, n.y, n.z);
-        uv.push(tu, 1 - tv);
+        // u runs from the figure's right side to its left, because a painting
+        // of a face is painted the way it is seen: the image's left edge is
+        // the viewer's left, which is +X on a figure looking down -Z. Today's
+        // painting is symmetric and would not notice, but the next one will.
+        uv.push(1 - tu, 1 - tv);
       }
     }
     const cols = NX + 1;
@@ -909,7 +913,10 @@ export class Character {
       for (let j = 0; j <= 1; j++) {
         pos.push(Math.sin(ang) * R, cy + (j ? h : -h) * 0.5, -Math.cos(ang) * R);
         nrm.push(Math.sin(ang), 0, -Math.cos(ang));
-        uv.push(u, j);
+        // Wound the same way round as the face patch: the image's left edge
+        // belongs on the figure's right, or every word in a logo comes out
+        // back to front.
+        uv.push(1 - u, j);
       }
     }
     for (let i = 0; i < segs; i++) {

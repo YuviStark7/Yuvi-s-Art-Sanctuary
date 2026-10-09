@@ -24,34 +24,47 @@ at once, and they may well be one fault rather than three:
 - its **face is reversed** — it reads as facing the wrong way,
 - its **arms pass in and out of the body** as it walks.
 
-Nothing here is diagnosed yet, so **start by reproducing it on screen**, not by
-reading. Walk the figure, and watch it from the front, from behind and in the
-wardrobe at the door.
+**Judge the hands first.** PR #8 — open, not merged — found that
+`_handGeometry()` authored both hands on the body's centre line while
+`skinTo()` bound them rigidly to the wrists, so each hand sat buried in the
+pelvis, on the far side of the figure from its own arm, and swept through it as
+the arms swung. That reading is confirmed independently from a second place:
+`_buildHandItem()` hangs whatever the figure carries off the right wrist
+*bone*, which stands at `x = +X.shoulder`, eighteen centimetres from where the
+hand mesh was authored — so a glass of wine floats in an empty right hand while
+both hands are crossed in the lap. A figure like that reads wrong from every
+angle, and may well be the whole of why it reads reversed.
 
-What has already been checked, so the next run does not repeat it — all three
-of these came out **consistent**, and none of them is the fault:
+Everything below has been traced and came out **consistent**. None of it is the
+fault, so no run should spend time on it again:
 
 - Forward is `-Z` throughout: `js/player.js` turns the figure with
-  `Math.atan2(-dirX, -dirZ)`, which maps local `-Z` onto the heading.
-- Left is `-X`: `js/character.js` builds every limb from
-  `side === 'L' ? -1 : 1`, which is correct for a figure facing `-Z`.
-- The face patch is built on the `-Z` side of the skull (`_faceGeometry()`,
-  where `z` is negative), so it is on the same side as the forward direction.
+  `Math.atan2(-dirX, -dirZ)` and `main.js` sets
+  `character.root.rotation.y = player.facing`. Walking toward `+X` gives
+  `facing = -π/2`, which does send local `-Z` to `+X`.
+- Left is `-X`, which is correct for a figure facing `-Z` with `+Y` up, and
+  `js/character.js` builds every limb from `side === 'L' ? -1 : 1`.
+- The front of the figure is on `-Z` everywhere: the face patch, the flattened
+  back of the skull, the hair that is longer at the back, the toes, the
+  camera's lens and the cigarette's lit end.
 - The painted face is **left-right symmetric** — `faceTexture()` in
-  `js/textures.js` draws one eye and mirrors it — so flipping the face patch's
-  `u` coordinate would change nothing. The reversed face is not a mirrored
-  texture.
+  `js/textures.js` draws one eye and mirrors it — so nothing done to the face
+  patch's `u` can make it read differently.
+- The turntable at the door is right too: `placeForWardrobe()` sets
+  `facing = Math.PI` and `updateWardrobeCamera()` puts the camera on the `+Z`
+  side, so it is the face the visitor is shown.
+- three.js is not double-applying the root's yaw. `_skinned()` binds after
+  `root.updateMatrixWorld(true)`, so the skeleton's bone inverses hold the bind
+  pose and the root's rotation is applied exactly once.
+- The arm swing's signs are consistent: `rotation.z = sign * 0.085` splays both
+  arms outward, and every action pose that reaches across the body uses a
+  negative `z` on the right and a positive one on the left.
 
-So look instead for an extra half-turn somewhere between the skeleton, the
-root and whatever drives it, and for the arm fault in `skinChain()` and the
-garment tubes `_wear()` builds — an arm that passes through the torso is
-usually a bind-pose or weighting problem, not an animation one.
-
-*How to judge it:* walk toward a mirror-flat wall and then away from it. The
-figure should face where it is going, its right hand should stay on your left
-while it walks toward you, and its arms should swing clear of its hips from
-every angle. Check it dressed in each top, because the garment tubes are
-bound separately from the body.
+*How to judge it:* walk toward a wall and then away from it, and look at the
+figure from the front, from behind, and on the turntable at the door, dressed
+in each top. Its right hand should stay on your left while it walks toward you,
+and its arms should swing clear of its hips. If it reads right once the hands
+are on the ends of the arms, delete this item.
 
 ### 2. Keep the camera inside the building
 Walk up to a wall, then pan or pull the camera back, and past a certain angle
@@ -146,6 +159,14 @@ and moving light should play across the basin floor.
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### The figure's prints came out mirrored
+`_buildChestGraphic()` and `_faceGeometry()` both mapped `u = 0` to the
+figure's left, which is the viewer's right — so a brand logo printed on the
+chest read back to front, and so would any face painting that is not perfectly
+symmetric. Both now run `u` from the figure's right side, the way an image of a
+person is painted. Nothing in today's render moves: every shipped top has
+`graphic: null` and the face is symmetric. (PR #PRNUM)
 
 ### Ambient occlusion in the room
 Solved in closed form instead of in screen space: the room is a known shape, so
