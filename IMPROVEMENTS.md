@@ -166,7 +166,7 @@ figure's left, which is the viewer's right — so a brand logo printed on the
 chest read back to front, and so would any face painting that is not perfectly
 symmetric. Both now run `u` from the figure's right side, the way an image of a
 person is painted. Nothing in today's render moves: every shipped top has
-`graphic: null` and the face is symmetric. (PR #PRNUM)
+`graphic: null` and the face is symmetric. (PR #9)
 
 ### Ambient occlusion in the room
 Solved in closed form instead of in screen space: the room is a known shape, so
