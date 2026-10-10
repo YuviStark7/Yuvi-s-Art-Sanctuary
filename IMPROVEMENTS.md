@@ -18,40 +18,66 @@ depends on you to judge the result.
 
 ### 1. Fix the figure — handedness, face and arms
 **This is the owner's first concern.** Three things are wrong with the figure
-at once, and they may well be one fault rather than three:
+at once:
 
 - its **hands are on the wrong sides**,
 - its **face is reversed** — it reads as facing the wrong way,
 - its **arms pass in and out of the body** as it walks.
 
-Nothing here is diagnosed yet, so **start by reproducing it on screen**, not by
-reading. Walk the figure, and watch it from the front, from behind and in the
-wardrobe at the door.
+`tools/probe-figure.mjs` measures the third of these without a browser. Run it
+before touching anything — it says the hands and the arms are one fault.
 
-What has already been checked, so the next run does not repeat it — all three
-of these came out **consistent**, and none of them is the fault:
+- **The hand is the loudest thing in the report, by a factor of ten.** It is
+  authored on the body's centre line and bound rigidly to the wrist, which
+  stands 18.3 cm out, so 52 of its 69 measurable vertices sit inside the pelvis
+  at rest and 67 of them sweep out through it as the arms swing, by up to
+  266 mm. **PR #8 is open against exactly this**, and with its one-line fix the
+  probe reports nothing buried and nothing crossing. Judge that first: a figure
+  with both hands crossed into its lap reads wrong from every angle, and may
+  well be the whole of what was seen.
+- What is left once the hands are right is **structural, not a weighting bug**.
+  The upper arm hangs beside a ribcage of nearly its own width — `X.shoulder` is
+  0.183 m, the torso reaches `rx` 0.166 m at chest height, the arm's own radius
+  is 0.053 m — so the arm's inboard flank grazes the torso a few millimetres
+  inside it, the whole way down. The shoulder then swings ±23°, carrying that
+  flank 20–80 mm fore and aft, far further than it is buried, so it cuts out
+  through the skin and back in. The probe counts 17 arm and 49 sleeve vertices
+  doing it, up to 37 mm.
+- Three cheap fixes were tried against the probe and **all three fail**, so no
+  run should spend itself on them again: lifting the arm outboard at the
+  shoulder, even by 42 mm, barely moves the count; handing the buried vertices
+  to the `chest` bone makes it worse, because the handover boundary itself lies
+  on the skin and then moves; and halving the swing only scales the breakout
+  down, it does not remove it. Clearing the arm honestly needs about 34 mm more
+  shoulder width, which would put the figure's shoulders at 54 cm across.
+- The probe finds the **thigh** doing the same thing against the seat of the
+  torso — 10 bare-leg and 20 trouser vertices, up to 30 mm. Nobody has reported
+  it, so it is presumably harder to see, but it is the same fault.
+
+So what remains on the arms is a **re-proportioning job**: the chest has to come
+in, or the shoulders go out, or the junction has to be covered by geometry that
+belongs to neither. That one wants eyes on it, and the probe to check it.
+
+Traced and came out **consistent** — none of this is the fault:
 
 - Forward is `-Z` throughout: `js/player.js` turns the figure with
-  `Math.atan2(-dirX, -dirZ)`, which maps local `-Z` onto the heading.
-- Left is `-X`: `js/character.js` builds every limb from
-  `side === 'L' ? -1 : 1`, which is correct for a figure facing `-Z`.
-- The face patch is built on the `-Z` side of the skull (`_faceGeometry()`,
-  where `z` is negative), so it is on the same side as the forward direction.
-- The painted face is **left-right symmetric** — `faceTexture()` in
-  `js/textures.js` draws one eye and mirrors it — so flipping the face patch's
-  `u` coordinate would change nothing. The reversed face is not a mirrored
-  texture.
-
-So look instead for an extra half-turn somewhere between the skeleton, the
-root and whatever drives it, and for the arm fault in `skinChain()` and the
-garment tubes `_wear()` builds — an arm that passes through the torso is
-usually a bind-pose or weighting problem, not an animation one.
+  `Math.atan2(-dirX, -dirZ)`, and `main.js` sets
+  `character.root.rotation.y = player.facing`.
+- Left is `-X`, correct for a figure facing `-Z` with `+Y` up, and
+  `js/character.js` builds every limb from `side === 'L' ? -1 : 1`.
+- The front is on `-Z` everywhere: the face patch, the flattened back of the
+  skull, the hair that is longer behind, the toes, the cap's peak.
+- The painted face is **left-right symmetric** — `faceTexture()` draws one eye
+  and mirrors it — so flipping the face patch's `u` would change nothing. PR #9
+  is open against that convention anyway, for the chest print's sake.
+- three.js is not double-applying the root's yaw: the default attached bind mode
+  recomputes `bindMatrixInverse` from `matrixWorld` every frame.
 
 *How to judge it:* walk toward a mirror-flat wall and then away from it. The
 figure should face where it is going, its right hand should stay on your left
 while it walks toward you, and its arms should swing clear of its hips from
-every angle. Check it dressed in each top, because the garment tubes are
-bound separately from the body.
+every angle. Check it dressed in each top, because the garment tubes are bound
+separately from the body.
 
 ### 2. Keep the camera inside the building
 Walk up to a wall, then pan or pull the camera back, and past a certain angle
@@ -146,6 +172,15 @@ and moving light should play across the basin floor.
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### A way to see the figure without a browser
+`tools/probe-figure.mjs` rebuilds the skeleton and the limb tubes from the same
+numbers `js/character.js` uses, drives them with the same walk pose through the
+vendored three.js, and reports every vertex that crosses the body surface
+mid-stride. It found the hands buried in the pelvis — 266 mm of travel through
+it, which is the open PR #8's fault seen from a second direction — and showed
+that what remains on the arms is a bind-pose overlap no weighting can fix.
+Changes nothing on screen. (PR #10)
 
 ### Ambient occlusion in the room
 Solved in closed form instead of in screen space: the room is a known shape, so

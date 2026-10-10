@@ -341,7 +341,8 @@ js/
   ui.js             entrance, pause menu, the reading panel
   main.js           assembly and the frame loop
 models/             imported .glb models (the blossom tree)
-tools/              offline scripts: cutting a tree out of a pack, rigging a figure
+tools/              offline scripts: cutting a tree out of a pack, rigging a
+                    figure, measuring one for limbs that clip the body
 serve.mjs           tiny local preview server (not used by the published site)
 start.cmd / .sh     double-click to preview locally
 vendor/three/       three.js r185 (MIT), vendored so nothing is fetched at runtime
