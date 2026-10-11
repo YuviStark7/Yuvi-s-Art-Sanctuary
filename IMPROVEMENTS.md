@@ -24,12 +24,17 @@ at once, and they may well be one fault rather than three:
 - its **face is reversed** — it reads as facing the wrong way,
 - its **arms pass in and out of the body** as it walks.
 
-Nothing here is diagnosed yet, so **start by reproducing it on screen**, not by
-reading. Walk the figure, and watch it from the front, from behind and in the
-wardrobe at the door.
+The **arms** are half of the way fixed: `ARM_CLEARANCE` in `js/character.js`
+moves the upper arm's buried inboard flank out of the chest, which halves the
+seam the swing drags through the shirt. What is left of that one is in the Done
+note below, and it is a re-proportioning job, not a bug.
 
-What has already been checked, so the next run does not repeat it — all three
-of these came out **consistent**, and none of them is the fault:
+The **hands** and the **face** are still open. Start by reproducing them on
+screen, not by reading: walk the figure, and watch it from the front, from
+behind and in the wardrobe at the door.
+
+What has already been checked, so the next run does not repeat it — all of
+these came out **consistent**, and none of them is the fault:
 
 - Forward is `-Z` throughout: `js/player.js` turns the figure with
   `Math.atan2(-dirX, -dirZ)`, which maps local `-Z` onto the heading.
@@ -41,11 +46,16 @@ of these came out **consistent**, and none of them is the fault:
   `js/textures.js` draws one eye and mirrors it — so flipping the face patch's
   `u` coordinate would change nothing. The reversed face is not a mirrored
   texture.
+- The wardrobe turntable is right too. At the door `placeForWardrobe()` sets
+  `facing = Math.PI`, and `updateWardrobeCamera()` starts the camera on the
+  `+Z` side at `wardrobeAngle = 0.35`, so it is the face you are shown, with
+  the figure's right hand on your left.
 
-So look instead for an extra half-turn somewhere between the skeleton, the
-root and whatever drives it, and for the arm fault in `skinChain()` and the
-garment tubes `_wear()` builds — an arm that passes through the torso is
-usually a bind-pose or weighting problem, not an animation one.
+So for the face, look for an extra half-turn somewhere between the skeleton,
+the root and whatever drives it. For the hands, look at `_handGeometry()` —
+it is authored about the body's centre line and bound rigidly to the wrist,
+which stands 18.3 cm out, and a rigid bind leaves a vertex exactly where it
+was authored.
 
 *How to judge it:* walk toward a mirror-flat wall and then away from it. The
 figure should face where it is going, its right hand should stay on your left
@@ -146,6 +156,18 @@ and moving light should play across the basin floor.
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### The upper arm's flank, out of the chest
+`ARM_CLEARANCE` shifts the upper arm's tube outboard and takes the same off its
+own `rx`, so the arm's outer edge and its depth do not move and only the flank
+buried in the chest does. Measured against the walk cycle, the seam the swing
+drags through the shirt halves, from 17.0 mm deep over 12 vertices to 9.7 mm
+over 6, and against the bare torso it all but goes. Clearing the arm outright
+needs about 30 mm more shoulder width, and the sleeve cannot follow it out
+there without opening a notch of bare shoulder — so that part is a
+re-proportioning job and still wants eyes. Two directions are now ruled out:
+tucking the arm inboard, or reducing its rest splay, make it four times worse,
+not better. (PR #11)
 
 ### Ambient occlusion in the room
 Solved in closed form instead of in screen space: the room is a known shape, so
