@@ -28,10 +28,30 @@ function shortestAngle(from, to) {
   return d;
 }
 
-/** Height of the dome directly above a given distance from the centre. */
-function ceilingAt(r) {
-  const k = Math.min(0.999, r / HALL.radius);
-  return HALL.wallHeight + HALL.domeRise * Math.sqrt(1 - k * k);
+/**
+ * Height of the dome directly above a given distance from the centre.
+ *
+ * `inset` shrinks the dome all round rather than simply lowering it, which is
+ * the difference that matters near the springline: there the shell leans, so a
+ * handspan taken off its height leaves almost nothing beside it.
+ */
+function ceilingAt(r, inset) {
+  const pad = inset || 0;
+  const k = Math.min(0.999, r / Math.max(0.01, HALL.radius - pad));
+  return HALL.wallHeight + Math.max(0, HALL.domeRise - pad) * Math.sqrt(1 - k * k);
+}
+
+/**
+ * The radius of the sphere around the lens that holds the whole near plane.
+ *
+ * Geometry vanishes when it crosses that plane, not when it reaches the lens,
+ * so this is the smallest clearance that keeps concrete drawn. It is read from
+ * the camera rather than fixed because the field of view is a setting and the
+ * aspect ratio is the window's.
+ */
+function nearPlaneReach(camera) {
+  const h = camera.near * Math.tan((camera.fov * Math.PI / 180) * 0.5);
+  return Math.hypot(camera.near, h, h * camera.aspect);
 }
 
 export class Player {
@@ -67,8 +87,11 @@ export class Player {
     this.dragY = 0;
     this.dragTravel = 0;
 
+    this._base = new THREE.Vector3();
     this._pivot = new THREE.Vector3();
+    this._side = new THREE.Vector3();
     this._want = new THREE.Vector3();
+    this._probe = new THREE.Vector3();
     this._camPos = new THREE.Vector3();
     this._look = new THREE.Vector3();
 
@@ -213,23 +236,69 @@ export class Player {
     return false;
   }
 
-  /** Somewhere the camera is allowed to sit: inside the dome, or a chamber. */
-  _cameraFits(p) {
+  /**
+   * Somewhere the camera is allowed to sit: inside the dome, or a chamber.
+   *
+   * `pad` is how far the nearest concrete has to be. The hall's own margins
+   * were always wider than any near plane, so they stand as they were and the
+   * pad only raises them if someone asks for more; the chambers used to be
+   * tested a handspan *outside* their walls, which is why a camera in one
+   * could sit in the concrete.
+   */
+  _cameraFits(p, pad) {
+    const wall = Math.max(0.30, pad);
+    const floor = Math.max(0.32, pad);
     const r = Math.hypot(p.x, p.z);
-    if (r < HALL.radius - 0.30 && p.y > 0.32 && p.y < ceilingAt(r) - 0.22) return true;
+    if (r < HALL.radius - wall && p.y > floor &&
+        p.y < ceilingAt(r, Math.max(0.22, pad))) return true;
 
     for (const a of ALCOVES) {
       const c = Math.cos(a.around), s = Math.sin(a.around);
       const dx = p.x - HALL.radius * c, dz = p.z - HALL.radius * s;
       const forward = dx * c + dz * s;
       const side = dx * -s + dz * c;
-      if (forward > -1.0 && forward < a.depth + HALL.shellThickness - 0.30 &&
-          Math.abs(side) < a.width / 2 + 0.10 &&
-          p.y > 0.32 && p.y < a.height - 0.10) {
+      if (forward > -1.0 && forward < a.depth + HALL.shellThickness - wall &&
+          Math.abs(side) < a.width / 2 - pad &&
+          p.y > floor && p.y < a.height - pad) {
         return true;
       }
     }
     return false;
+  }
+
+  /**
+   * How far a point may travel from somewhere legal along a straight line
+   * before it stops being legal.
+   *
+   * Still no raycast: the room is a known shape, so the line is walked in
+   * steps and the last step is halved a few times to land on the boundary
+   * itself. Landing on it matters — a length quantised to the step would make
+   * the camera jump in visible increments as the figure walks.
+   *
+   * Stopping at the *first* illegal step is the whole point. A side chamber
+   * sitting directly behind a wall is perfectly legal on its own, and testing
+   * only the end of the arm is what let it be reached through the concrete.
+   */
+  _clampAlong(from, dir, maxLen, pad) {
+    const fits = (t) =>
+      this._cameraFits(this._probe.copy(from).addScaledVector(dir, t), pad);
+
+    let good = 0, bad = -1;
+    for (let t = CAMERA.probeStep; t < maxLen; t += CAMERA.probeStep) {
+      if (fits(t)) { good = t; continue; }
+      bad = t;
+      break;
+    }
+    if (bad < 0) {
+      if (fits(maxLen)) return maxLen;
+      bad = maxLen;
+    }
+
+    for (let i = 0; i < 7; i++) {
+      const mid = (good + bad) * 0.5;
+      if (fits(mid)) good = mid; else bad = mid;
+    }
+    return good;
   }
 
   /* -------------------------------------------------------------- update */
@@ -329,32 +398,34 @@ export class Player {
 
   /**
    * Places the camera on a spring arm behind the figure, shortening the arm
-   * until its end is somewhere it is allowed to be.
+   * until the whole of it is somewhere it is allowed to be.
+   *
+   * Measured out from the figure's own shoulder line rather than from the
+   * pivot, because the shoulder offset is by itself enough to put the pivot
+   * through the wall the figure is standing against — and an arm hung off a
+   * pivot already outside has no legal length at all.
    */
   updateCamera(dt) {
-    const shoulder = CAMERA.shoulder;
+    const pad = Math.max(CAMERA.clearance, nearPlaneReach(this.camera));
     const cy = Math.cos(this.camYaw), sy = Math.sin(this.camYaw);
 
-    this._pivot.set(
-      this.position.x + cy * shoulder,
-      this.position.y + CAMERA.pivotHeight,
-      this.position.z - sy * shoulder
-    );
+    this._base.set(this.position.x, this.position.y + CAMERA.pivotHeight, this.position.z);
+
+    const side = this._side.set(cy, 0, -sy);
+    this._pivot.copy(this._base).addScaledVector(
+      side, this._clampAlong(this._base, side, CAMERA.shoulder, pad));
 
     const cp = Math.cos(this.camPitch), sp = Math.sin(this.camPitch);
-    const fwd = this._want.set(-sy * cp, sp, -cy * cp);
+    const back = this._want.set(sy * cp, -sp, cy * cp);   // the way the arm runs
 
-    let d = this.camDist;
-    for (let i = 0; i < 14; i++) {
-      this._camPos.copy(this._pivot).addScaledVector(fwd, -d);
-      if (this._cameraFits(this._camPos) || d <= CAMERA.minDistance * 0.6) break;
-      d *= 0.86;
-    }
+    const d = this._clampAlong(this._pivot, back, this.camDist, pad);
 
-    // ease the arm out, snap it in — pushing through a wall should feel instant
+    // ease the arm out, snap it in — pushing through a wall should feel instant.
+    // Easing is safe in a way it was not before: every length up to `d` has
+    // been tested, so a part-way arm is legal too, not merely its end.
     const rate = d < this._armDist ? 1 : Math.min(1, dt * 5.5);
     this._armDist += (d - this._armDist) * rate;
-    this._camPos.copy(this._pivot).addScaledVector(fwd, -this._armDist);
+    this._camPos.copy(this._pivot).addScaledVector(back, this._armDist);
 
     this.camera.position.copy(this._camPos);
     this.camera.rotation.set(0, 0, 0);

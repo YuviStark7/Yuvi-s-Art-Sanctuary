@@ -395,8 +395,11 @@ A few decisions worth knowing about if you go poking around:
   would — armpits, inner thighs, under the chin, under a hem.
 - **The camera arm is clamped analytically, not raycast.** The room is a known
   shape — a cylinder capped by an ellipsoidal dome, plus two rectangular
-  chambers — so the arm is shortened until its end sits somewhere legal. It is
-  exact, costs nothing, and cannot tunnel through a wall the way a ray can.
+  chambers — so the arm is shortened until the whole of it sits somewhere
+  legal, measured out from the figure's own shoulder line. Testing the whole
+  arm rather than only its end is what stops it reaching a side chamber
+  through the wall in front of it; the clearance it keeps is the reach of the
+  near plane, because concrete nearer than that is not drawn at all.
 - **The figure's shadow is a soft patch, not a shadow map.** The building's
   shadows are drawn once and frozen, which is what makes the light pools free;
   a moving figure cannot use that, and under this diffuse light a soft contact
