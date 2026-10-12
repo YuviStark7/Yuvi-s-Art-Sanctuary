@@ -751,7 +751,11 @@ export class Character {
         pos.push(x, y, z);
         const n = new THREE.Vector3(x / (a * a), ny / b, z / (c * c)).normalize();
         nrm.push(n.x, n.y, n.z);
-        uv.push(tu, 1 - tv);
+        // u runs from the figure's right side to its left, because a painting
+        // of a face is painted the way it is seen: the image's left edge is
+        // the viewer's left, which is +X on a figure looking down -Z. Today's
+        // painting is symmetric and would not notice, but the next one will.
+        uv.push(1 - tu, 1 - tv);
       }
     }
     const cols = NX + 1;
@@ -774,6 +778,9 @@ export class Character {
   /**
    * A hand rather than a paddle: a palm, a soft block of fingers with two
    * grooves cut in, and a thumb set across. At seven centimetres, enough.
+   *
+   * Laid out on the centre line and carried out to the wrist at the end, so
+   * the two halves stay exact mirrors of one another.
    */
   _handGeometry(s) {
     const parts = [];
@@ -796,7 +803,13 @@ export class Character {
     thumb.translate(-s * 0.030, Y.wrist - 0.052, 0.008);
     parts.push(thumb);
 
-    return merge(parts);
+    // Out to the shoulder's line, the way the foot sits out on the leg's. The
+    // hand is bound rigidly to the wrist, and a rigid bind keeps a vertex
+    // exactly where it was authored, so anything left on the centre line stays
+    // buried in the hips and swings through them from there.
+    const geo = merge(parts);
+    geo.translate(s * X.shoulder, 0, 0);
+    return geo;
   }
 
   /** A soft patch of contact shadow that travels with the figure. */
@@ -940,7 +953,10 @@ export class Character {
       for (let j = 0; j <= 1; j++) {
         pos.push(Math.sin(ang) * R, cy + (j ? h : -h) * 0.5, -Math.cos(ang) * R);
         nrm.push(Math.sin(ang), 0, -Math.cos(ang));
-        uv.push(u, j);
+        // Wound the same way round as the face patch: the image's left edge
+        // belongs on the figure's right, or every word in a logo comes out
+        // back to front.
+        uv.push(1 - u, j);
       }
     }
     for (let i = 0; i < segs; i++) {

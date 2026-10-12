@@ -24,17 +24,12 @@ at once, and they may well be one fault rather than three:
 - its **face is reversed** — it reads as facing the wrong way,
 - its **arms pass in and out of the body** as it walks.
 
-The **arms** are half of the way fixed: `ARM_CLEARANCE` in `js/character.js`
-moves the upper arm's buried inboard flank out of the chest, which halves the
-seam the swing drags through the shirt. What is left of that one is in the Done
-note below, and it is a re-proportioning job, not a bug.
+Nothing here is diagnosed yet, so **start by reproducing it on screen**, not by
+reading. Walk the figure, and watch it from the front, from behind and in the
+wardrobe at the door.
 
-The **hands** and the **face** are still open. Start by reproducing them on
-screen, not by reading: walk the figure, and watch it from the front, from
-behind and in the wardrobe at the door.
-
-What has already been checked, so the next run does not repeat it — all of
-these came out **consistent**, and none of them is the fault:
+What has already been checked, so the next run does not repeat it — all three
+of these came out **consistent**, and none of them is the fault:
 
 - Forward is `-Z` throughout: `js/player.js` turns the figure with
   `Math.atan2(-dirX, -dirZ)`, which maps local `-Z` onto the heading.
@@ -46,16 +41,11 @@ these came out **consistent**, and none of them is the fault:
   `js/textures.js` draws one eye and mirrors it — so flipping the face patch's
   `u` coordinate would change nothing. The reversed face is not a mirrored
   texture.
-- The wardrobe turntable is right too. At the door `placeForWardrobe()` sets
-  `facing = Math.PI`, and `updateWardrobeCamera()` starts the camera on the
-  `+Z` side at `wardrobeAngle = 0.35`, so it is the face you are shown, with
-  the figure's right hand on your left.
 
-So for the face, look for an extra half-turn somewhere between the skeleton,
-the root and whatever drives it. For the hands, look at `_handGeometry()` —
-it is authored about the body's centre line and bound rigidly to the wrist,
-which stands 18.3 cm out, and a rigid bind leaves a vertex exactly where it
-was authored.
+So look instead for an extra half-turn somewhere between the skeleton, the
+root and whatever drives it, and for the arm fault in `skinChain()` and the
+garment tubes `_wear()` builds — an arm that passes through the torso is
+usually a bind-pose or weighting problem, not an animation one.
 
 *How to judge it:* walk toward a mirror-flat wall and then away from it. The
 figure should face where it is going, its right hand should stay on your left
@@ -93,20 +83,7 @@ in. The concrete should never disappear and no black should ever show. Then
 stand in a doorway and do it again — that is the hardest case, because a
 legal chamber sits directly behind a legal hall.
 
-### 3. Light through the blossom
-The petals are opaque. Real blossom glows where the sun is behind it, and the
-canopy sits directly under the oculus, which is the best possible place for the
-effect.
-
-Add a cheap translucency term to the `Blossom` material in
-`buildImportedTree()` (`js/nature.js`) — a wrap-lighting or back-scatter tweak
-via `onBeforeCompile`, not a full subsurface model. The petal colour is already
-in vertex colours, so tint the back-scatter from that.
-
-*How to judge it:* stand under the canopy and look up toward the oculus. Petals
-between you and the light should warm and brighten at the edges.
-
-### 4. Softer shadow edges
+### 3. Softer shadow edges
 Shadows are currently a single hard-ish map. A PCSS-style or wider PCF filter
 would suit overcast light much better — contact-sharp near the floor, soft
 further away.
@@ -119,7 +96,7 @@ frame. Keep that property.
 should have a soft edge, and the tree's shadow on the island should stay crisp
 where trunk meets rock.
 
-### 5. Finer concrete up close
+### 4. Finer concrete up close
 The concrete is procedural and convincing at a distance, but soft when you walk
 up to a wall. Add a detail normal layered at a much higher frequency on top of
 the existing triplanar projection, fading in as the camera gets close.
@@ -130,7 +107,7 @@ larger canvas costs start-up time on every visit.
 *How to judge it:* walk right up to a wall between two artworks. It should
 retain fine tooth rather than going smooth.
 
-### 6. A loading screen worth the wait
+### 5. A loading screen worth the wait
 The blossom tree is 4.3 MB and downloads behind the existing progress gate.
 Right now "planting the tree" is a bare progress step. Make the wait feel
 intentional rather than broken on a slow connection.
@@ -140,7 +117,7 @@ Nothing heavy — the gate already exists in `js/ui.js`.
 *How to judge it:* throttle to Slow 3G in devtools and reload. It should read
 as deliberate, never as a hang.
 
-### 7. Real reflection and refraction in the pool
+### 6. Real reflection and refraction in the pool
 The water currently uses an analytic reflection — a pale dome with the oculus
 punched into it — rather than a true reflection pass. Upgrade it, and add
 caustics on the pool basin.
@@ -157,17 +134,13 @@ and moving light should play across the basin floor.
 
 *(the routine moves items here with a one-line note and the PR number)*
 
-### The upper arm's flank, out of the chest
-`ARM_CLEARANCE` shifts the upper arm's tube outboard and takes the same off its
-own `rx`, so the arm's outer edge and its depth do not move and only the flank
-buried in the chest does. Measured against the walk cycle, the seam the swing
-drags through the shirt halves, from 17.0 mm deep over 12 vertices to 9.7 mm
-over 6, and against the bare torso it all but goes. Clearing the arm outright
-needs about 30 mm more shoulder width, and the sleeve cannot follow it out
-there without opening a notch of bare shoulder — so that part is a
-re-proportioning job and still wants eyes. Two directions are now ruled out:
-tucking the arm inboard, or reducing its rest splay, make it four times worse,
-not better. (PR #11)
+### Light through the blossom
+Back-scatter on the `Blossom` material, added by overriding `RE_Direct` from
+`onBeforeCompile`, so each light contributes once and arrives already
+attenuated by the frozen shadow map — which is what keeps the buried interior
+of the crown dark while the lit outer petals glow. High and medium; off at low
+via `canopyTranslucency`. Chosen over PR #6, which lit the whole canopy
+evenly, after rendering both headless and comparing. (PR #7)
 
 ### Ambient occlusion in the room
 Solved in closed form instead of in screen space: the room is a known shape, so
