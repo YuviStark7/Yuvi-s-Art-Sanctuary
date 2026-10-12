@@ -42,14 +42,6 @@ of these came out **consistent**, and none of them is the fault:
   `u` coordinate would change nothing. The reversed face is not a mirrored
   texture.
 
-**Four pull requests are already open against this item** and between them
-cover all three faults: #8 puts the hands back on the ends of the arms (the
-hand tubes are built on the centre line and never carried out to the wrist,
-so each one is bound to the far shoulder's bone and sits in the hips), #10
-reaches the same conclusion with a measuring harness, #9 unmirrors the face
-patch and the chest print, and #11 lifts the upper arm's buried flank out of
-the chest. Nothing more is wanted here until those are looked at.
-
 So look instead for an extra half-turn somewhere between the skeleton, the
 root and whatever drives it, and for the arm fault in `skinChain()` and the
 garment tubes `_wear()` builds — an arm that passes through the torso is
@@ -61,18 +53,35 @@ while it walks toward you, and its arms should swing clear of its hips from
 every angle. Check it dressed in each top, because the garment tubes are
 bound separately from the body.
 
-### 2. Light through the blossom
-The petals are opaque. Real blossom glows where the sun is behind it, and the
-canopy sits directly under the oculus, which is the best possible place for the
-effect.
+### 2. Keep the camera inside the building
+Walk up to a wall, then pan or pull the camera back, and past a certain angle
+the camera leaves the sanctuary and you see pitch black.
 
-Add a cheap translucency term to the `Blossom` material in
-`buildImportedTree()` (`js/nature.js`) — a wrap-lighting or back-scatter tweak
-via `onBeforeCompile`, not a full subsurface model. The petal colour is already
-in vertex colours, so tint the back-scatter from that.
+The black is `scene.background` (`0x0d0d0c`): the shell is `side:
+THREE.FrontSide`, so the moment the camera crosses it the concrete stops being
+drawn and there is nothing behind it.
 
-*How to judge it:* stand under the canopy and look up toward the oculus. Petals
-between you and the light should warm and brighten at the edges.
+Two things in `updateCamera()` and `_cameraFits()` (`js/player.js`) look like
+the cause:
+
+- The shortening loop gives up with `d <= CAMERA.minDistance * 0.6` — about
+  0.78 m — and takes that distance **whether or not the position is legal**.
+  Stand close enough to a wall and no distance on the arm fits, so an illegal
+  one is used.
+- `_cameraFits()` tests the camera's **point only**. It does not test the near
+  plane, which stands 0.06 m in front of it with corners about 0.09 m out, and
+  it does not test the segment from the pivot to the camera — so an arm can
+  pass through concrete and land somewhere legal on the far side.
+
+Keep the clamp analytic, the way the README describes it; this does not need a
+raycast. If no length on the arm is legal, the arm should collapse to its
+minimum and stay inside rather than give up.
+
+*How to judge it:* walk into every wall of the hall and both side chambers,
+and at each one pan all the way round and pull the camera fully out and fully
+in. The concrete should never disappear and no black should ever show. Then
+stand in a doorway and do it again — that is the hardest case, because a
+legal chamber sits directly behind a legal hall.
 
 ### 3. Softer shadow edges
 Shadows are currently a single hard-ish map. A PCSS-style or wider PCF filter
@@ -125,14 +134,13 @@ and moving light should play across the basin floor.
 
 *(the routine moves items here with a one-line note and the PR number)*
 
-### Keep the camera inside the building
-The arm is now tested along its whole length rather than only at its end, and
-measured out from the figure's shoulder line rather than from the pivot, so it
-can neither reach a side chamber through the wall nor hang off a pivot the
-shoulder offset has already pushed outside. Clearance is the near plane's own
-reach, read from the camera. Across 9.0 M sampled poses the camera left the
-building on 7.82% before and none after, bar the doorway thresholds where the
-measuring harness itself disagrees with the curved wall. (PR #12)
+### Light through the blossom
+Back-scatter on the `Blossom` material, added by overriding `RE_Direct` from
+`onBeforeCompile`, so each light contributes once and arrives already
+attenuated by the frozen shadow map — which is what keeps the buried interior
+of the crown dark while the lit outer petals glow. High and medium; off at low
+via `canopyTranslucency`. Chosen over PR #6, which lit the whole canopy
+evenly, after rendering both headless and comparing. (PR #7)
 
 ### Ambient occlusion in the room
 Solved in closed form instead of in screen space: the room is a known shape, so

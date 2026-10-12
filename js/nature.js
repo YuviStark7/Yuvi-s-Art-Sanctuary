@@ -449,6 +449,72 @@ export function buildTree(textures, uniforms, seed) {
 
 /* ------------------------------------------------ the imported blossom -- */
 
+/* How much of the sun a fully back-lit petal passes through to the eye, and
+ * how tightly that glow gathers where the light is directly behind the canopy.
+ * A strength of 0 is the effect switched off. */
+const PETAL_TRANSLUCENCY = { strength: 0.70, focus: 3.0 };
+
+/**
+ * Light coming through the petals from behind.
+ *
+ * A petal is a thin card, so what reads as translucency is almost all
+ * back-scatter: light that entered the far side and left toward the eye. That
+ * needs no subsurface model, because the far side is lit exactly when the side
+ * we can see is not — which the shading normal already tells us, since it is
+ * flipped toward the camera on a back face. Tinting the term with the
+ * material's own diffuse colour picks up both the petal tint and the occlusion
+ * baked into COLOR_0, so a cluster buried in the crown transmits less than the
+ * sunlit edge of the canopy without anything extra being measured.
+ *
+ * It rides on RE_Direct rather than being added after the light loop so that
+ * every light contributes once and each one arrives already attenuated by the
+ * shadow map — a petal standing in the shade of the canopy above it does not
+ * glow.
+ */
+function addPetalTranslucency(material, strength, focus) {
+  // addWind() has already claimed onBeforeCompile, and three.js allows a
+  // material only one hook, so wrap what is there instead of replacing it.
+  const inner = material.onBeforeCompile;
+  const innerKey = material.customProgramCacheKey;
+
+  material.onBeforeCompile = function (shader, renderer) {
+    if (inner) inner.call(this, shader, renderer);
+    shader.uniforms.uPetalGlow = { value: strength };
+    shader.uniforms.uPetalFocus = { value: focus };
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <lights_physical_pars_fragment>',
+      `
+        #include <lights_physical_pars_fragment>
+        uniform float uPetalGlow;
+        uniform float uPetalFocus;
+        void RE_Direct_Petal(
+          const in IncidentLight directLight, const in vec3 geometryPosition,
+          const in vec3 geometryNormal, const in vec3 geometryViewDir,
+          const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material,
+          inout ReflectedLight reflectedLight
+        ) {
+          RE_Direct_Physical( directLight, geometryPosition, geometryNormal,
+            geometryViewDir, geometryClearcoatNormal, material, reflectedLight );
+
+          float behind = saturate( - dot( geometryNormal, directLight.direction ) );
+          float toward = pow( saturate( dot( geometryViewDir, - directLight.direction ) ), uPetalFocus );
+          // A floor under the forward lobe, so a back-lit petal is warm from
+          // every angle and incandescent only dead in front of the light.
+          reflectedLight.directDiffuse += directLight.color
+            * BRDF_Lambert( material.diffuseColor )
+            * ( behind * uPetalGlow * ( 0.30 + 0.70 * toward ) );
+        }
+        #undef RE_Direct
+        #define RE_Direct RE_Direct_Petal
+      `
+    );
+  };
+
+  material.customProgramCacheKey = function () {
+    return (innerKey ? innerKey.call(this) : '') + '|petal' + strength + '_' + focus;
+  };
+}
+
 /**
  * Dress an imported blossom tree (models/blossom-tree.glb) for the sanctuary.
  *
@@ -517,6 +583,14 @@ export function buildImportedTree(gltf, uniforms, quality) {
   // a few centimetres, which reads as air moving rather than as petals coming
   // loose from their twigs.
   if (leafMat && uniforms) addWind(leafMat, uniforms, 0.036);
+
+  // The canopy stands directly under the oculus, so most of what a visitor
+  // sees of it is seen against the light falling down the shaft. Back-scatter
+  // costs two dot products and a pow per light, which is more than a machine
+  // on the low preset should spend on a single tree.
+  if (leafMat && (!quality || quality.canopyTranslucency)) {
+    addPetalTranslucency(leafMat, PETAL_TRANSLUCENCY.strength, PETAL_TRANSLUCENCY.focus);
+  }
 
   group.userData.leafCount = leafCount;
   return { group, barkMat, leafMat, leafCount, imported: true };

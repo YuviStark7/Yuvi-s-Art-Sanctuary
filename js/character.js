@@ -372,11 +372,41 @@ const ARM_STOPS = [
   { y: Y.elbow, r: 0.0425 },
   { y: Y.wrist, r: 0.0335 }
 ];
+
 const LEG_STOPS = [
   { y: Y.hips + 0.02, r: 0.0855 },
   { y: Y.knee, r: 0.0615 },
   { y: Y.ankle, r: 0.0425 }
 ];
+
+/**
+ * How far the upper arm's inboard flank is moved out of the chest.
+ *
+ * The arm hangs beside a ribcage of nearly its own width, so the flank facing
+ * the body sits a few millimetres inside the chest the whole way down. A few
+ * millimetres would be harmless — buried is simply hidden — but the shoulder
+ * swings far enough to carry that flank out through the skin of the shirt and
+ * back in twice a stride, and it is the moving seam, not the burial, that
+ * reads as an arm passing through the body.
+ *
+ * Clearing the arm outright would take thirty millimetres more shoulder width,
+ * which is a different figure. This moves the flank alone: the tube is shifted
+ * outboard and loses the same off its own `rx`, so the arm's outer edge and
+ * its depth stay exactly where they were and only the buried side moves.
+ */
+const ARM_CLEARANCE = 0.010;
+
+/**
+ * Takes `ARM_CLEARANCE` off a section stack's `rx`, fading to nothing at the
+ * elbow. Below there the arm is already clear of the chest, and the forearm is
+ * seen from every angle, so it is left exactly as it was.
+ */
+function clearInboardFlank(sections) {
+  return sections.map((s) => {
+    const k = Math.max(0, Math.min(1, (s.y - Y.elbow) / 0.06));
+    return { y: s.y, rx: s.rx - ARM_CLEARANCE * k, rz: s.rz };
+  });
+}
 
 /** Grows a copy of a section stack outward, for a garment over a body part. */
 function inflate(sections, pad, from, to) {
@@ -660,7 +690,8 @@ export class Character {
     for (const side of ['L', 'R']) {
       const s = side === 'L' ? -1 : 1;
 
-      const arm = loftTube(taper(ARM_STOPS, 0.05), 18, true, true, s * X.shoulder, 0);
+      const arm = loftTube(clearInboardFlank(taper(ARM_STOPS, 0.05)), 18, true, true,
+                           s * (X.shoulder + ARM_CLEARANCE), 0);
       skinChain(arm, CHAINS['arm' + side], 0.085);
       bakeOcclusion(arm, 0.6, ['arm' + side]);
       this.bodyMeshes.push(this._skinned(arm, this.skinMat));
@@ -720,7 +751,11 @@ export class Character {
         pos.push(x, y, z);
         const n = new THREE.Vector3(x / (a * a), ny / b, z / (c * c)).normalize();
         nrm.push(n.x, n.y, n.z);
-        uv.push(tu, 1 - tv);
+        // u runs from the figure's right side to its left, because a painting
+        // of a face is painted the way it is seen: the image's left edge is
+        // the viewer's left, which is +X on a figure looking down -Z. Today's
+        // painting is symmetric and would not notice, but the next one will.
+        uv.push(1 - tu, 1 - tv);
       }
     }
     const cols = NX + 1;
@@ -743,6 +778,9 @@ export class Character {
   /**
    * A hand rather than a paddle: a palm, a soft block of fingers with two
    * grooves cut in, and a thumb set across. At seven centimetres, enough.
+   *
+   * Laid out on the centre line and carried out to the wrist at the end, so
+   * the two halves stay exact mirrors of one another.
    */
   _handGeometry(s) {
     const parts = [];
@@ -765,7 +803,15 @@ export class Character {
     thumb.translate(-s * 0.030, Y.wrist - 0.052, 0.008);
     parts.push(thumb);
 
-    return merge(parts);
+    // Out to the arm's line, the way the foot sits out on the leg's. The hand
+    // is bound rigidly to the wrist, and a rigid bind keeps a vertex exactly
+    // where it was authored, so anything left on the centre line stays buried
+    // in the hips and swings through them from there. It follows the arm's own
+    // offset rather than the bone's, because `ARM_CLEARANCE` moved the tube
+    // outboard and the wrist would otherwise step in by that much.
+    const geo = merge(parts);
+    geo.translate(s * (X.shoulder + ARM_CLEARANCE), 0, 0);
+    return geo;
   }
 
   /** A soft patch of contact shadow that travels with the figure. */
@@ -909,7 +955,10 @@ export class Character {
       for (let j = 0; j <= 1; j++) {
         pos.push(Math.sin(ang) * R, cy + (j ? h : -h) * 0.5, -Math.cos(ang) * R);
         nrm.push(Math.sin(ang), 0, -Math.cos(ang));
-        uv.push(u, j);
+        // Wound the same way round as the face patch: the image's left edge
+        // belongs on the figure's right, or every word in a logo comes out
+        // back to front.
+        uv.push(1 - u, j);
       }
     }
     for (let i = 0; i < segs; i++) {
