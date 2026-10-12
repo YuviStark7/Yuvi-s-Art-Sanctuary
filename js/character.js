@@ -743,6 +743,9 @@ export class Character {
   /**
    * A hand rather than a paddle: a palm, a soft block of fingers with two
    * grooves cut in, and a thumb set across. At seven centimetres, enough.
+   *
+   * Laid out on the centre line and carried out to the wrist at the end, so
+   * the two halves stay exact mirrors of one another.
    */
   _handGeometry(s) {
     const parts = [];
@@ -765,7 +768,13 @@ export class Character {
     thumb.translate(-s * 0.030, Y.wrist - 0.052, 0.008);
     parts.push(thumb);
 
-    return merge(parts);
+    // Out to the shoulder's line, the way the foot sits out on the leg's. The
+    // hand is bound rigidly to the wrist, and a rigid bind keeps a vertex
+    // exactly where it was authored, so anything left on the centre line stays
+    // buried in the hips and swings through them from there.
+    const geo = merge(parts);
+    geo.translate(s * X.shoulder, 0, 0);
+    return geo;
   }
 
   /** A soft patch of contact shadow that travels with the figure. */
