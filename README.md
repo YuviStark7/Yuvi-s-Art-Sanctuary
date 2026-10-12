@@ -296,19 +296,25 @@ If you want to replace the studio figure, look for a model that says all of:
 
 A scheduled cloud agent runs every morning at **07:00 Berlin**, takes the first
 item from [`IMPROVEMENTS.md`](IMPROVEMENTS.md), implements it on a branch and
-opens a pull request. It never merges and never pushes to `main`.
+**merges that branch into `main` itself** — no pull request, no review. The
+published site follows `main`, so the change is live as soon as it lands.
 
 **To steer it, edit `IMPROVEMENTS.md`.** Move an item to the top of the Queue to
 get it next, add your own in the same shape, or empty the Queue to make it stop
 proposing changes and only suggest.
 
-Two things worth knowing:
+Three things worth knowing:
 
 - **It cannot see the render.** It runs in a sandbox with no browser, so it can
   check that the code parses and that nothing grew unexpectedly, but it cannot
-  tell whether the room looks better. That is why every queue item carries a
-  "how to judge it" note and why every PR has to say what it could not verify.
-  Treat its pull requests as drafts to look at, never as finished work.
+  tell whether the room looks better. It now merges that unverified work
+  straight to the published site, so the "what I could not verify" note in each
+  commit message is the only warning anyone gets. Read the Done entries in
+  `IMPROVEMENTS.md`, and look at the room.
+- **A bad morning is one command away from undone.** Every run is still built on
+  its own `improve/<slug>` branch and merged with a merge commit, so
+  `git revert -m 1 <merge>` takes a single day's work back out without
+  disturbing the rest.
 - **It only has this repository.** No connectors, no access to anything else.
 
 Manage it at <https://claude.ai/code/routines> — that is also the only place it

@@ -1,8 +1,8 @@
 # Improvements queue
 
 This file is the work list for the daily improvement routine. It takes the
-**first unchecked item under Queue**, implements that one thing, opens a pull
-request, and moves the item to Done. It never merges anything.
+**first unchecked item under Queue**, implements that one thing, merges it into
+`main` itself, and moves the item to Done.
 
 **To steer it, edit this file.** Move an item to the top to get it next, add
 your own in the same shape, or empty the Queue entirely to make the routine
@@ -10,78 +10,54 @@ stop proposing changes and only suggest.
 
 Each item should say what to change and, crucially, **how to tell whether it
 worked** — the routine runs in the cloud and cannot see the render, so it
-depends on you to judge the result.
+depends on you to judge the result. It is now merging that unverified work
+straight to the published site, so read the Done notes.
 
 ---
 
 ## Queue
 
-### 1. Fix the figure — handedness, face and arms
-**This is the owner's first concern.** Three things are wrong with the figure
-at once, and they may well be one fault rather than three:
+### 1. Fix the figure — what is left of it
+Three faults were reported together. Two are now fixed and one was never
+reproduced, so this item stays open until the figure is looked at on screen.
 
-- its **hands are on the wrong sides**,
-- its **face is reversed** — it reads as facing the wrong way,
-- its **arms pass in and out of the body** as it walks.
+- **Hands on the wrong sides — fixed (PR #8).** `_handGeometry()` built both
+  hands on the centre line and never carried them out to the wrist, so a rigid
+  bind to `wrist<side>` left each hand 183 mm on the far side of its own wrist,
+  buried in the pelvis and sweeping out through it twice a stride.
+- **Chest print mirrored — fixed (PR #9).** The print's `u` ran from the
+  figure's left to its right, so every logo was printed back to front. The face
+  patch was unmirrored in the same pass; that half is a no-op today, because
+  `faceTexture()` draws one eye and mirrors it.
+- **Face reversed — not reproduced.** No fault was ever found. The suspicion is
+  that it was the hands all along: a figure whose hands are on the wrong sides
+  reads as turned around. **Check this first, now that PR #8 has landed.**
+- **Arms through the body — improved, not solved (PR #11).** `ARM_CLEARANCE`
+  moved the upper arm's buried flank out of the chest, halving the seam from
+  17.0 mm over 12 vertices to 9.7 mm over 6. What remains is a bind-pose
+  overlap that PR #10's probe says no weighting can fix.
 
-Nothing here is diagnosed yet, so **start by reproducing it on screen**, not by
-reading. Walk the figure, and watch it from the front, from behind and in the
-wardrobe at the door.
+*How to judge it:* walk the figure toward you and away again, dressed in each
+top. Its face should read as facing where it walks, its right hand should stay
+on your left, and its arms should swing clear of its hips from every angle. If
+any of that is still wrong, say which — these are no longer one fault.
 
-What has already been checked, so the next run does not repeat it — all three
-of these came out **consistent**, and none of them is the fault:
+### 2. Make the figure probe read the figure, not a copy of it
+`tools/probe-figure.mjs` restates the constants in `js/character.js` by hand
+instead of importing them, and the two have already drifted. The probe still
+places the arm at `s * X.shoulder` and authors the hand on the centre line, so
+it measures the figure as it was *before* PRs #8 and #11. Run it today and it
+reports the hands 266 mm out of the body, which is no longer true — the tool
+bought to check the figure now lies about it.
 
-- Forward is `-Z` throughout: `js/player.js` turns the figure with
-  `Math.atan2(-dirX, -dirZ)`, which maps local `-Z` onto the heading.
-- Left is `-X`: `js/character.js` builds every limb from
-  `side === 'L' ? -1 : 1`, which is correct for a figure facing `-Z`.
-- The face patch is built on the `-Z` side of the skull (`_faceGeometry()`,
-  where `z` is negative), so it is on the same side as the forward direction.
-- The painted face is **left-right symmetric** — `faceTexture()` in
-  `js/textures.js` draws one eye and mirrors it — so flipping the face patch's
-  `u` coordinate would change nothing. The reversed face is not a mirrored
-  texture.
+Import the shared numbers from `js/character.js` rather than restating them, or
+lift them into a small module both files import. Either way the probe must fail
+loudly if a constant it depends on disappears, rather than quietly measuring a
+figure nobody ships.
 
-So look instead for an extra half-turn somewhere between the skeleton, the
-root and whatever drives it, and for the arm fault in `skinChain()` and the
-garment tubes `_wear()` builds — an arm that passes through the torso is
-usually a bind-pose or weighting problem, not an animation one.
-
-*How to judge it:* walk toward a mirror-flat wall and then away from it. The
-figure should face where it is going, its right hand should stay on your left
-while it walks toward you, and its arms should swing clear of its hips from
-every angle. Check it dressed in each top, because the garment tubes are
-bound separately from the body.
-
-### 2. Keep the camera inside the building
-Walk up to a wall, then pan or pull the camera back, and past a certain angle
-the camera leaves the sanctuary and you see pitch black.
-
-The black is `scene.background` (`0x0d0d0c`): the shell is `side:
-THREE.FrontSide`, so the moment the camera crosses it the concrete stops being
-drawn and there is nothing behind it.
-
-Two things in `updateCamera()` and `_cameraFits()` (`js/player.js`) look like
-the cause:
-
-- The shortening loop gives up with `d <= CAMERA.minDistance * 0.6` — about
-  0.78 m — and takes that distance **whether or not the position is legal**.
-  Stand close enough to a wall and no distance on the arm fits, so an illegal
-  one is used.
-- `_cameraFits()` tests the camera's **point only**. It does not test the near
-  plane, which stands 0.06 m in front of it with corners about 0.09 m out, and
-  it does not test the segment from the pivot to the camera — so an arm can
-  pass through concrete and land somewhere legal on the far side.
-
-Keep the clamp analytic, the way the README describes it; this does not need a
-raycast. If no length on the arm is legal, the arm should collapse to its
-minimum and stay inside rather than give up.
-
-*How to judge it:* walk into every wall of the hall and both side chambers,
-and at each one pan all the way round and pull the camera fully out and fully
-in. The concrete should never disappear and no black should ever show. Then
-stand in a doorway and do it again — that is the hardest case, because a
-legal chamber sits directly behind a legal hall.
+*How to judge it:* run `node tools/probe-figure.mjs`. The two hand rows should
+fall to nothing, because the hands are fixed. Whatever is still listed is real,
+and is the arm overlap item 1 leaves open.
 
 ### 3. Softer shadow edges
 Shadows are currently a single hard-ish map. A PCSS-style or wider PCF filter
@@ -134,6 +110,31 @@ and moving light should play across the basin floor.
 
 *(the routine moves items here with a one-line note and the PR number)*
 
+### Keep the camera inside the building
+The arm is tested along its whole length instead of only at its end, and
+measured out from the figure's shoulder line instead of from the pivot, so it
+can neither reach a side chamber through the wall nor hang off a pivot the
+shoulder offset has already pushed outside. Clearance is the near plane's own
+reach, read from the camera. Over 9.0 M sampled poses the camera left the
+sanctuary on 7.82% before and none after. Against a wall, where no length of
+arm is legal, it now collapses to about 0.19 m and the camera sits inside the
+figure — better than the void it replaced, but **not yet looked at on screen**;
+`CAMERA.clearance` and `CAMERA.probeStep` tune it without a revert. (PR #12)
+
+### The figure's hands, and the mirrored chest print
+Hands carried out to the wrists (PR #8), chest print and face patch unmirrored
+(PR #9), the upper arm's buried flank moved out of the chest (PR #11). The
+reported face reversal was never reproduced and the arm overlap is only halved,
+so the item stays in the Queue, trimmed to what is left of it.
+
+### A way to measure the figure without a browser
+`tools/probe-figure.mjs` rebuilds the skeleton and the limb tubes, drives them
+through the walk cycle with the vendored three.js, and reports every vertex
+that is inside the body at rest and outside it mid-stride. Nothing in the
+published site changes — `tools/` is not loaded by `index.html`. It restates
+`js/character.js`'s numbers instead of importing them and has already drifted
+from them, which is now item 2 in the Queue. (PR #10)
+
 ### Light through the blossom
 Back-scatter on the `Blossom` material, added by overriding `RE_Direct` from
 `onBeforeCompile`, so each light contributes once and arrives already
@@ -159,10 +160,13 @@ room with room to spare even from inside a chamber. (PR #1)
 ## Rules the routine follows
 
 - One item per run. Never more.
-- Branch `improve/<slug>`, pull request, **never merge, never push to main**.
+- Branch `improve/<slug>`, then **merge it into `main` itself**. No pull
+  request, no review, no waiting. The branch is still how the work is built, so
+  a bad run stays one `git revert` away.
 - No build step, no npm dependencies, no CDN links. three.js stays vendored.
 - Respect the three quality presets. Anything expensive is off or reduced at low.
 - Never touch the brand placeholders in `js/wardrobe.js`, the keys in
   `js/payments.config.js`, or anything in `supabase/` unless an item says so.
-- Say plainly in the PR what it could not verify, because it cannot see the
-  render.
+- Say plainly in the commit message what it could not verify, because it cannot
+  see the render — and it is now merging that unverified work straight to the
+  published site, so that note is the only warning anyone gets.
