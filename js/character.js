@@ -803,12 +803,14 @@ export class Character {
     thumb.translate(-s * 0.030, Y.wrist - 0.052, 0.008);
     parts.push(thumb);
 
-    // Out to the shoulder's line, the way the foot sits out on the leg's. The
-    // hand is bound rigidly to the wrist, and a rigid bind keeps a vertex
-    // exactly where it was authored, so anything left on the centre line stays
-    // buried in the hips and swings through them from there.
+    // Out to the arm's line, the way the foot sits out on the leg's. The hand
+    // is bound rigidly to the wrist, and a rigid bind keeps a vertex exactly
+    // where it was authored, so anything left on the centre line stays buried
+    // in the hips and swings through them from there. It follows the arm's own
+    // offset rather than the bone's, because `ARM_CLEARANCE` moved the tube
+    // outboard and the wrist would otherwise step in by that much.
     const geo = merge(parts);
-    geo.translate(s * X.shoulder, 0, 0);
+    geo.translate(s * (X.shoulder + ARM_CLEARANCE), 0, 0);
     return geo;
   }
 
