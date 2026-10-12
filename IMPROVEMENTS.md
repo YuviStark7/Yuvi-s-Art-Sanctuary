@@ -42,6 +42,14 @@ of these came out **consistent**, and none of them is the fault:
   `u` coordinate would change nothing. The reversed face is not a mirrored
   texture.
 
+**Four pull requests are already open against this item** and between them
+cover all three faults: #8 puts the hands back on the ends of the arms (the
+hand tubes are built on the centre line and never carried out to the wrist,
+so each one is bound to the far shoulder's bone and sits in the hips), #10
+reaches the same conclusion with a measuring harness, #9 unmirrors the face
+patch and the chest print, and #11 lifts the upper arm's buried flank out of
+the chest. Nothing more is wanted here until those are looked at.
+
 So look instead for an extra half-turn somewhere between the skeleton, the
 root and whatever drives it, and for the arm fault in `skinChain()` and the
 garment tubes `_wear()` builds — an arm that passes through the torso is
@@ -53,37 +61,7 @@ while it walks toward you, and its arms should swing clear of its hips from
 every angle. Check it dressed in each top, because the garment tubes are
 bound separately from the body.
 
-### 2. Keep the camera inside the building
-Walk up to a wall, then pan or pull the camera back, and past a certain angle
-the camera leaves the sanctuary and you see pitch black.
-
-The black is `scene.background` (`0x0d0d0c`): the shell is `side:
-THREE.FrontSide`, so the moment the camera crosses it the concrete stops being
-drawn and there is nothing behind it.
-
-Two things in `updateCamera()` and `_cameraFits()` (`js/player.js`) look like
-the cause:
-
-- The shortening loop gives up with `d <= CAMERA.minDistance * 0.6` — about
-  0.78 m — and takes that distance **whether or not the position is legal**.
-  Stand close enough to a wall and no distance on the arm fits, so an illegal
-  one is used.
-- `_cameraFits()` tests the camera's **point only**. It does not test the near
-  plane, which stands 0.06 m in front of it with corners about 0.09 m out, and
-  it does not test the segment from the pivot to the camera — so an arm can
-  pass through concrete and land somewhere legal on the far side.
-
-Keep the clamp analytic, the way the README describes it; this does not need a
-raycast. If no length on the arm is legal, the arm should collapse to its
-minimum and stay inside rather than give up.
-
-*How to judge it:* walk into every wall of the hall and both side chambers,
-and at each one pan all the way round and pull the camera fully out and fully
-in. The concrete should never disappear and no black should ever show. Then
-stand in a doorway and do it again — that is the hardest case, because a
-legal chamber sits directly behind a legal hall.
-
-### 3. Light through the blossom
+### 2. Light through the blossom
 The petals are opaque. Real blossom glows where the sun is behind it, and the
 canopy sits directly under the oculus, which is the best possible place for the
 effect.
@@ -96,7 +74,7 @@ in vertex colours, so tint the back-scatter from that.
 *How to judge it:* stand under the canopy and look up toward the oculus. Petals
 between you and the light should warm and brighten at the edges.
 
-### 4. Softer shadow edges
+### 3. Softer shadow edges
 Shadows are currently a single hard-ish map. A PCSS-style or wider PCF filter
 would suit overcast light much better — contact-sharp near the floor, soft
 further away.
@@ -109,7 +87,7 @@ frame. Keep that property.
 should have a soft edge, and the tree's shadow on the island should stay crisp
 where trunk meets rock.
 
-### 5. Finer concrete up close
+### 4. Finer concrete up close
 The concrete is procedural and convincing at a distance, but soft when you walk
 up to a wall. Add a detail normal layered at a much higher frequency on top of
 the existing triplanar projection, fading in as the camera gets close.
@@ -120,7 +98,7 @@ larger canvas costs start-up time on every visit.
 *How to judge it:* walk right up to a wall between two artworks. It should
 retain fine tooth rather than going smooth.
 
-### 6. A loading screen worth the wait
+### 5. A loading screen worth the wait
 The blossom tree is 4.3 MB and downloads behind the existing progress gate.
 Right now "planting the tree" is a bare progress step. Make the wait feel
 intentional rather than broken on a slow connection.
@@ -130,7 +108,7 @@ Nothing heavy — the gate already exists in `js/ui.js`.
 *How to judge it:* throttle to Slow 3G in devtools and reload. It should read
 as deliberate, never as a hang.
 
-### 7. Real reflection and refraction in the pool
+### 6. Real reflection and refraction in the pool
 The water currently uses an analytic reflection — a pale dome with the oculus
 punched into it — rather than a true reflection pass. Upgrade it, and add
 caustics on the pool basin.
@@ -146,6 +124,15 @@ and moving light should play across the basin floor.
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### Keep the camera inside the building
+The arm is now tested along its whole length rather than only at its end, and
+measured out from the figure's shoulder line rather than from the pivot, so it
+can neither reach a side chamber through the wall nor hang off a pivot the
+shoulder offset has already pushed outside. Clearance is the near plane's own
+reach, read from the camera. Across 9.0 M sampled poses the camera left the
+building on 7.82% before and none after, bar the doorway thresholds where the
+measuring harness itself disagrees with the curved wall. (PR #12)
 
 ### Ambient occlusion in the room
 Solved in closed form instead of in screen space: the room is a known shape, so

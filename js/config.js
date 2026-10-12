@@ -91,7 +91,27 @@ export const CAMERA = {
   pitch: 0.06,
   minPitch: -0.62,
   maxPitch: 1.15,
-  turnRate: 9.0         // how quickly the figure swings to face its heading
+  turnRate: 9.0,        // how quickly the figure swings to face its heading
+
+  /* How much room the camera keeps around itself, in metres.
+   *
+   * A camera is not a point: its near plane stands `RENDER.near` in front of
+   * the lens, so concrete closer than that stops being drawn and the world
+   * shows through the wall. The reach of that plane is measured from the lens
+   * every frame and used whenever it is the wider of the two, which makes this
+   * number a comfort floor rather than the safety margin itself.
+   *
+   * Keep it below `PLAYER.radius`: the clamp measures out from the figure's own
+   * shoulder line, and that line is only reliably legal because the figure is
+   * held further off the walls than the camera is. */
+  clearance: 0.12,
+
+  /* How finely the arm is walked when testing it, in metres. The arm is
+   * checked along its whole length rather than only at its end, so it cannot
+   * cross concrete and come to rest in the chamber behind it. Raise this above
+   * `maxDistance` and only the end of the arm is tested, which is what the
+   * camera used to do. */
+  probeStep: 0.22
 };
 
 // The coin toss at the pool's edge.
