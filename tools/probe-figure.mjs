@@ -22,79 +22,68 @@
  *
  *   node tools/probe-figure.mjs
  *
- * Numbers mirror js/character.js, the way tools/rig-figure.mjs mirrors them.
+ * Every number it measures with is imported from js/figure.metrics.js, which
+ * is also what js/character.js builds the figure from. This file restated them
+ * by hand once and drifted far enough in three merges to report 266 mm of
+ * fault that had already been fixed. What is still written out here is the
+ * walk — a pose rather than a measurement, and the one place left where this
+ * probe can fall behind the figure.
  */
 import * as THREE from '../vendor/three/three.module.min.js';
-
-/* the figure, in metres off the floor (mirrors js/character.js) */
-const Y = {
-  hips: 0.95, spine: 1.09, chest: 1.26, neck: 1.44, head: 1.615,
-  shoulder: 1.41, elbow: 1.13, wrist: 0.88,
-  knee: 0.51, ankle: 0.09
-};
-const X = { shoulder: 0.183, leg: 0.084 };
-
-const BONES = [
-  'hips', 'spine', 'chest', 'neck', 'head',
-  'shoulderL', 'elbowL', 'wristL',
-  'shoulderR', 'elbowR', 'wristR',
-  'hipL', 'kneeL', 'ankleL',
-  'hipR', 'kneeR', 'ankleR'
-];
-const B = {}; BONES.forEach((n, i) => { B[n] = i; });
-
-const CHAINS = {
-  armL: [{ bone: B.shoulderL, y: Y.shoulder }, { bone: B.elbowL, y: Y.elbow },
-         { bone: B.wristL, y: Y.wrist }],
-  armR: [{ bone: B.shoulderR, y: Y.shoulder }, { bone: B.elbowR, y: Y.elbow },
-         { bone: B.wristR, y: Y.wrist }],
-  legL: [{ bone: B.hipL, y: Y.hips }, { bone: B.kneeL, y: Y.knee },
-         { bone: B.ankleL, y: Y.ankle }],
-  legR: [{ bone: B.hipR, y: Y.hips }, { bone: B.kneeR, y: Y.knee },
-         { bone: B.ankleR, y: Y.ankle }]
-};
-
-const TORSO = [
-  { y: 0.828, rx: 0.144, rz: 0.104 }, { y: 0.878, rx: 0.155, rz: 0.111 },
-  { y: 0.930, rx: 0.158, rz: 0.113 }, { y: 1.010, rx: 0.141, rz: 0.100 },
-  { y: 1.110, rx: 0.132, rz: 0.094 }, { y: 1.190, rx: 0.140, rz: 0.099 },
-  { y: 1.270, rx: 0.156, rz: 0.107 }, { y: 1.345, rx: 0.166, rz: 0.111 },
-  { y: 1.408, rx: 0.157, rz: 0.102 }, { y: 1.448, rx: 0.116, rz: 0.088 }
-];
-const ARM_STOPS = [
-  { y: Y.shoulder + 0.03, r: 0.055 },
-  { y: Y.elbow, r: 0.0425 },
-  { y: Y.wrist, r: 0.0335 }
-];
-const LEG_STOPS = [
-  { y: Y.hips + 0.02, r: 0.0855 },
-  { y: Y.knee, r: 0.0615 },
-  { y: Y.ankle, r: 0.0425 }
-];
+import {
+  Y, X, B, BONES, CHAINS, TORSO, ARM_STOPS, LEG_STOPS, LIMB, HAND,
+  armOffset, clearInboardFlank, topShell, seatShell, sleeveStops, trouserStops,
+  taper, sectionAt
+} from '../js/figure.metrics.js';
 
 /** Above this the torso closes into a dome, so the ellipse stack stops being
  *  a fair description of it. */
 const STACK_TOP = 1.41;
 
-/* ------------------------------------------------------------- geometry -- */
-
-function taper(stops, bulge) {
-  const secs = [];
-  const span = stops[stops.length - 1].y - stops[0].y || 1;
-  for (let i = 0; i < stops.length - 1; i++) {
-    const a = stops[i], b = stops[i + 1];
-    for (let k = 0; k < 4; k++) {
-      const t = k / 4;
-      const y = a.y + (b.y - a.y) * t;
-      let r = a.r + (b.r - a.r) * t;
-      if (bulge) r *= 1 + Math.sin(((y - stops[0].y) / span) * Math.PI) * bulge;
-      secs.push({ y, rx: r, rz: r * 0.93 });
-    }
-  }
-  const last = stops[stops.length - 1];
-  secs.push({ y: last.y, rx: last.r, rz: last.r * 0.93 });
-  return secs.sort((p, q) => p.y - q.y);
+/**
+ * A constant that disappears is a module error before any measuring happens,
+ * which is loud enough. A constant that survives but changes shape is not: an
+ * emptied stack, or a hand that loses a part, would simply be measured — and
+ * a quiet measurement of a figure nobody ships is how this probe went wrong
+ * the first time. So the shapes it leans on are checked before it starts.
+ */
+function need(ok, what) {
+  if (ok) return;
+  console.error(`probe-figure: ${what}.`);
+  console.error('js/figure.metrics.js has changed shape under this probe. Fix the probe');
+  console.error('before trusting anything it prints.');
+  process.exit(1);
 }
+
+/** The bones this probe builds a rig for and drives through the walk. */
+const DRIVEN = [
+  'hips', 'spine', 'chest', 'neck', 'head',
+  'shoulderL', 'elbowL', 'wristL', 'shoulderR', 'elbowR', 'wristR',
+  'hipL', 'kneeL', 'ankleL', 'hipR', 'kneeR', 'ankleR'
+];
+
+const num = (v) => typeof v === 'number' && Number.isFinite(v);
+const stack = (s) => Array.isArray(s) && s.length > 1 && s.every((p) => num(p.y));
+
+need(['hips', 'shoulder', 'elbow', 'wrist', 'knee', 'ankle'].every((k) => num(Y[k])),
+     'Y has lost a height this probe measures from');
+need(num(X.shoulder) && num(X.leg), 'X has lost a sideways offset');
+need(DRIVEN.every((n) => num(B[n])), 'the bone table has lost a bone this probe drives');
+need(['armL', 'armR', 'legL', 'legR'].every((c) => CHAINS[c] && CHAINS[c].length === 3),
+     'a limb chain is no longer three bones deep');
+need(stack(TORSO) && stack(ARM_STOPS) && stack(LEG_STOPS),
+     'a body stack is too short to sweep');
+need(stack(topShell()) && stack(seatShell()) && stack(sleeveStops(true)) &&
+     stack(sleeveStops(false)) && stack(trouserStops(true)),
+     'a garment stack came back empty');
+need(HAND.parts.some((part) => part.slab), 'the hand has no parts left to measure');
+// Not that the clearance is still ten millimetres — that is a dial, and
+// zero is a fair setting for it — only that the arm is still placed by a
+// finite, mirrored offset that never pulls it inboard of its own bone.
+need(num(armOffset(1)) && armOffset(-1) === -armOffset(1) && armOffset(1) >= X.shoulder,
+     'the arm is no longer placed by a mirrored offset outboard of its bone');
+
+/* ------------------------------------------------------------- geometry -- */
 
 /** loftTube()'s vertices, domed caps included. Positions are all we need. */
 function loftPoints(sections, radial, capBottom, capTop, ox) {
@@ -122,8 +111,8 @@ function loftPoints(sections, radial, capBottom, capTop, ox) {
 }
 
 /** slab()'s vertices, for the hand. */
-function slabPoints(w, h, d, r) {
-  const geo = new THREE.BoxGeometry(w, h, d, 3, 3, 3);
+function slabPoints(w, h, d, r, segs) {
+  const geo = new THREE.BoxGeometry(w, h, d, segs || 3, segs || 3, segs || 3);
   const p = geo.attributes.position;
   const hx = Math.max(0, w / 2 - r), hy = Math.max(0, h / 2 - r), hz = Math.max(0, d / 2 - r);
   const v = new THREE.Vector3(), c = new THREE.Vector3();
@@ -139,23 +128,27 @@ function slabPoints(w, h, d, r) {
   return pts;
 }
 
-function inflate(sections, pad, from, to) {
-  return sections
-    .filter((s) => s.y >= (from === undefined ? -9 : from) && s.y <= (to === undefined ? 9 : to))
-    .map((s) => ({ y: s.y, rx: s.rx + pad, rz: s.rz + pad }));
-}
-
-function sectionAt(sections, y) {
-  if (y <= sections[0].y) return sections[0];
-  const last = sections[sections.length - 1];
-  if (y >= last.y) return last;
-  for (let i = 1; i < sections.length; i++) {
-    if (y > sections[i].y) continue;
-    const a = sections[i - 1], b = sections[i];
-    const k = (y - a.y) / (b.y - a.y || 1);
-    return { rx: a.rx + (b.rx - a.rx) * k, rz: a.rz + (b.rz - a.rz) * k };
+/**
+ * The hand's surface, laid out the way `Character._handGeometry()` lays it
+ * out: each part authored on the centre line and the whole thing carried out
+ * to the arm's own offset at the end. The knuckle grooves are left out, as
+ * they are recessed into the fingers and carry no part of the hand's outline
+ * against the body.
+ */
+function handPoints(s) {
+  const pts = [];
+  for (const part of HAND.parts) {
+    if (!part.slab) continue;
+    const box = part.slab;
+    const a = part.tiltZ ? s * part.tiltZ : 0;
+    const cos = Math.cos(a), sin = Math.sin(a);
+    for (const p of slabPoints(box.w, box.h, box.d, box.r, box.segs)) {
+      pts.push([armOffset(s) + s * part.at[0] + p[0] * cos - p[1] * sin,
+                part.at[1] + p[0] * sin + p[1] * cos,
+                part.at[2] + p[2]]);
+    }
   }
-  return last;
+  return pts;
 }
 
 /* ------------------------------------------------------------- skinning -- */
@@ -298,46 +291,47 @@ const PHASES = 64;
 /** One limb surface, and the body surface it must not cut through. */
 function surfaces(side) {
   const s = side === 'L' ? -1 : 1;
-  const sleeve = (stops) =>
-    loftPoints(taper(stops, 0.03), 18, false, true, s * X.shoulder);
+  const sleeve = (long) =>
+    loftPoints(taper(sleeveStops(long), LIMB.sleeve.bulge), LIMB.sleeve.radial,
+               false, true, s * X.shoulder);
 
   return [
     {
       name: 'bare arm',
-      pts: loftPoints(taper(ARM_STOPS, 0.05), 18, true, true, s * X.shoulder),
-      chain: CHAINS['arm' + side], band: 0.085, body: TORSO, ref: B.chest
+      pts: loftPoints(clearInboardFlank(taper(ARM_STOPS, LIMB.arm.bulge)),
+                      LIMB.arm.radial, true, true, armOffset(s)),
+      chain: CHAINS['arm' + side], band: LIMB.arm.band, body: TORSO, ref: B.chest
     },
     {
       // the hand is bound rigidly to the wrist, so wherever it was authored
       // is where it stays relative to the arm
       name: 'hand',
-      pts: slabPoints(0.070, 0.062, 0.031, 0.014)
-        .map((p) => [p[0], p[1] + Y.wrist - 0.034, p[2]]),
+      pts: handPoints(s),
       bone: B['wrist' + side], body: TORSO, ref: B.hips
     },
     {
       name: 'short sleeve',
-      pts: sleeve([{ y: Y.shoulder + 0.034, r: 0.065 }, { y: Y.shoulder - 0.150, r: 0.057 }]),
-      chain: CHAINS['arm' + side], band: 0.085, body: inflate(TORSO, 0.021, 0.82, 1.46), ref: B.chest
+      pts: sleeve(false),
+      chain: CHAINS['arm' + side], band: LIMB.sleeve.band, body: topShell(), ref: B.chest
     },
     {
       name: 'long sleeve',
-      pts: sleeve([{ y: Y.shoulder + 0.034, r: 0.065 }, { y: Y.elbow, r: 0.049 },
-                   { y: Y.wrist + 0.028, r: 0.041 }]),
-      chain: CHAINS['arm' + side], band: 0.085, body: inflate(TORSO, 0.021, 0.82, 1.46), ref: B.chest
+      pts: sleeve(true),
+      chain: CHAINS['arm' + side], band: LIMB.sleeve.band, body: topShell(), ref: B.chest
     },
     {
       name: 'bare leg',
-      pts: loftPoints(taper(LEG_STOPS, 0.055), 20, true, false, s * X.leg),
-      chain: CHAINS['leg' + side], band: 0.10, body: TORSO, ref: B.hips
+      pts: loftPoints(taper(LEG_STOPS, LIMB.leg.bulge), LIMB.leg.radial,
+                      true, false, s * X.leg),
+      chain: CHAINS['leg' + side], band: LIMB.leg.band, body: TORSO, ref: B.hips
     },
     {
       // the wide cut, which is the roomier of the two and so the one that has
       // the most of itself inside the seat of the trousers
       name: 'trouser leg',
-      pts: loftPoints(taper([{ y: Y.hips + 0.03, r: 0.098 }, { y: Y.knee, r: 0.086 },
-                             { y: Y.ankle + 0.035, r: 0.085 }], 0.02), 22, false, true, s * X.leg),
-      chain: CHAINS['leg' + side], band: 0.10, body: inflate(TORSO, 0.013, 0.82, 1.02), ref: B.hips
+      pts: loftPoints(taper(trouserStops(true), LIMB.trouser.bulge),
+                      LIMB.trouser.radial, false, true, s * X.leg),
+      chain: CHAINS['leg' + side], band: LIMB.trouser.band, body: seatShell(), ref: B.hips
     }
   ];
 }
