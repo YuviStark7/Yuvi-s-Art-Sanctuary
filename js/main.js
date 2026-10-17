@@ -33,6 +33,7 @@ const QUALITY = {
     floorReflection: true, reflectionSize: 1024,
     bloom: true, bloomStrength: 0.34,
     shadowMap: 4096, chamberShadows: true, roomAO: true,
+    softShadows: true, shadowSoftness: 4.0,
     mist: 1100, msaa: 4, maxPixelRatio: 2,
     artworkGlow: 0.05, shafts: 4, canopyLayers: 2, canopyTranslucency: true
   },
@@ -41,6 +42,7 @@ const QUALITY = {
     floorReflection: true, reflectionSize: 512,
     bloom: true, bloomStrength: 0.30,
     shadowMap: 2048, chamberShadows: false, roomAO: true,
+    softShadows: true, shadowSoftness: 2.0,
     mist: 650, msaa: 0, maxPixelRatio: 1.5,
     artworkGlow: 0.07, shafts: 3, canopyLayers: 2, canopyTranslucency: true
   },
@@ -49,6 +51,7 @@ const QUALITY = {
     floorReflection: false, reflectionSize: 256,
     bloom: false, bloomStrength: 0,
     shadowMap: 1024, chamberShadows: false, roomAO: false,
+    softShadows: false, shadowSoftness: 0,
     mist: 260, msaa: 0, maxPixelRatio: 1,
     artworkGlow: 0.12, shafts: 2, canopyLayers: 1, canopyTranslucency: false
   }
@@ -85,6 +88,75 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 // the building and the sun never move, so the shadow map is drawn once
 renderer.shadowMap.autoUpdate = false;
+
+/* -------------------------------------------------------- soft shadows -- */
+
+/**
+ * How many taps the widened filter spends on a fragment.
+ *
+ * The disk is spun by a per-pixel noise term, so widening it costs grain
+ * rather than banding — and grain falls with the square root of the tap count
+ * while being indifferent to the width. Twenty-four keeps the scatter in the
+ * middle of the penumbra near a tenth of the step across it; the five three.js
+ * ships would leave a fifth, which a floor this flat and this evenly lit would
+ * show.
+ */
+const SOFT_SHADOW_TAPS = 24;
+
+/**
+ * Widens the shadow filter, so an overcast sky casts an overcast edge.
+ *
+ * r185 reads the map on a five-point Vogel disk of `shadow.radius` texels,
+ * spun per pixel by a noise term. At the default radius of one that is eight
+ * millimetres across on the high preset's 4096 map, which is the knife edge
+ * the dome throws on the floor through the skylights. Widening the disk alone
+ * would leave five taps' worth of scatter spread over the whole of the new
+ * edge rather than hidden inside a one-texel one, so the unrolled sum is
+ * replaced by a longer one of exactly the same shape.
+ *
+ * The five-tap sum stays, behind a test on the radius itself. That is what
+ * keeps the extra taps away from the low preset and from the chamber lamps,
+ * neither of which widens its radius: the branch is uniform over a draw call,
+ * so only one of the two sums is ever walked.
+ *
+ * A true PCSS would scale the penumbra by how far away the blocker is, which
+ * is what tightens a shadow as it approaches its caster. It is not reachable
+ * from here — this path samples a hardware comparison sampler, which answers
+ * nearer-or-farther and will not give the blocker's depth back, and getting
+ * at it would mean changing how three.js declares and binds the map. So the
+ * disk is one width, kept small enough in absolute terms that the trunk still
+ * meets the rock tightly.
+ *
+ * Patching a vendored chunk earns one guard: if a later three.js stops writing
+ * the sum this way nothing is replaced, and the stock filter stands.
+ */
+function widenShadowFilter() {
+  const disk = (count, scale, indent) => {
+    const taps = [];
+    for (let i = 0; i < count; i++) {
+      taps.push(`${indent}\ttexture( shadowMap, vec3( shadowCoord.xy + ` +
+                `vogelDiskSample( ${i}, ${count}, phi ) * radius, shadowCoord.z ) )`);
+    }
+    return `${indent}shadow = (\n${taps.join(' +\n')}\n${indent}) * ${scale};`;
+  };
+
+  const chunk = THREE.ShaderChunk.shadowmap_pars_fragment;
+  const stock = disk(5, '0.2', '\t\t\t\t');
+  if (chunk.indexOf(stock) < 0) return false;
+
+  THREE.ShaderChunk.shadowmap_pars_fragment = chunk.replace(stock,
+    '\t\t\t\tif ( shadowRadius <= 1.5 ) {\n' +
+    `${disk(5, '0.2', '\t\t\t\t\t')}\n` +
+    '\t\t\t\t} else {\n' +
+    `${disk(SOFT_SHADOW_TAPS, `( 1.0 / ${SOFT_SHADOW_TAPS}.0 )`, '\t\t\t\t\t')}\n` +
+    '\t\t\t\t}');
+  return true;
+}
+
+if (!widenShadowFilter()) {
+  console.warn('three.js writes its shadow filter differently now; ' +
+               'the stock one stands and shadow edges stay hard.');
+}
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0d0d0c);
@@ -307,6 +379,11 @@ function buildWorld(quality) {
   sun.shadow.camera.far = 62;
   sun.shadow.bias = -0.0006;
   sun.shadow.normalBias = 0.045;
+  // The width is in shadow-map texels, and a texel is 8 mm across the floor on
+  // the high preset but four times that on low, so each preset needs its own
+  // number to throw the same 33 mm edge — which is also why low already throws
+  // one that wide on the stock five taps and asks for no widening at all.
+  sun.shadow.radius = quality.softShadows ? quality.shadowSoftness : 1;
   root.add(sun, sun.target);
 
   const fill = new THREE.DirectionalLight(0xdce8f2, 0.42);

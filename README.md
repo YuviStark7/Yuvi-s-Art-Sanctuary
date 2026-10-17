@@ -378,7 +378,10 @@ A few decisions worth knowing about if you go poking around:
   `userData.shared` — without that, changing quality would empty the island.
 - **The dome casts its own shadow**, so daylight only reaches the floor through
   the openings. The building and the sun never move, so the shadow map is drawn
-  once at load and then frozen — the pools of light on the floor are free.
+  once at load and then frozen — drawing the pools of light on the floor is
+  free. Reading them is not: the edge of each one is filtered over a
+  twenty-four-tap disk every frame, which is what makes it soft enough for an
+  overcast sky, and which the low preset does without.
 - **The pool does not use a reflection pass.** It reflects an analytic room
   instead: a pale dome with the oculus punched into it. Cheap, stable, and it
   makes the opening dance across the ripples.

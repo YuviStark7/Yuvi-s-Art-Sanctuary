@@ -59,20 +59,7 @@ figure nobody ships.
 fall to nothing, because the hands are fixed. Whatever is still listed is real,
 and is the arm overlap item 1 leaves open.
 
-### 3. Softer shadow edges
-Shadows are currently a single hard-ish map. A PCSS-style or wider PCF filter
-would suit overcast light much better — contact-sharp near the floor, soft
-further away.
-
-The shadow map is frozen (`renderer.shadowMap.autoUpdate = false`) because
-nothing in the building moves, so extra filtering cost is paid once, not every
-frame. Keep that property.
-
-*How to judge it:* the shadow the dome casts on the floor through the skylights
-should have a soft edge, and the tree's shadow on the island should stay crisp
-where trunk meets rock.
-
-### 4. Finer concrete up close
+### 3. Finer concrete up close
 The concrete is procedural and convincing at a distance, but soft when you walk
 up to a wall. Add a detail normal layered at a much higher frequency on top of
 the existing triplanar projection, fading in as the camera gets close.
@@ -83,7 +70,7 @@ larger canvas costs start-up time on every visit.
 *How to judge it:* walk right up to a wall between two artworks. It should
 retain fine tooth rather than going smooth.
 
-### 5. A loading screen worth the wait
+### 4. A loading screen worth the wait
 The blossom tree is 4.3 MB and downloads behind the existing progress gate.
 Right now "planting the tree" is a bare progress step. Make the wait feel
 intentional rather than broken on a slow connection.
@@ -93,7 +80,7 @@ Nothing heavy — the gate already exists in `js/ui.js`.
 *How to judge it:* throttle to Slow 3G in devtools and reload. It should read
 as deliberate, never as a hang.
 
-### 6. Real reflection and refraction in the pool
+### 5. Real reflection and refraction in the pool
 The water currently uses an analytic reflection — a pale dome with the oculus
 punched into it — rather than a true reflection pass. Upgrade it, and add
 caustics on the pool basin.
@@ -109,6 +96,20 @@ and moving light should play across the basin floor.
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### Softer shadow edges
+The sun's filter disk is widened from one shadow-map texel to a 33 mm edge on
+the floor, and the five-tap sum three.js reads it with is replaced by a
+twenty-four-tap one of the same shape, so the extra width reads as soft rather
+than as grain. The five taps stay behind a test on the radius itself, which is
+what keeps the cost off `low` and off the chamber lamps. High and medium; off
+at low via `softShadows`, and `shadowSoftness` sets the width on each preset
+without a revert. A true PCSS is not reachable on this path — the filter reads
+a hardware comparison sampler, which will not give a blocker's depth back — so
+the penumbra is one width rather than tightening toward its caster. **Not yet
+looked at on screen.** Note also that this item's premise was wrong: freezing
+the shadow map saves redrawing it, not filtering it, and filtering is paid per
+fragment per frame. (PR #14)
 
 ### Keep the camera inside the building
 The arm is tested along its whole length instead of only at its end, and
