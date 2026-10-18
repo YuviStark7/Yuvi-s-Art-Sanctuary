@@ -370,6 +370,10 @@ A few decisions worth knowing about if you go poking around:
   as the dome narrows, and either way it smears into radial streaks around the
   oculus. Projecting on all three axes and blending by the normal sidesteps it,
   and gives the swept seating, which carries no UVs at all, a surface for free.
+  Up close the same projection is run a second time, at half a metre across
+  and into the shading normal only, so a wall keeps a fine tooth at arm's
+  length; it fades out by four and a half metres, where a tile that small
+  would shimmer rather than hold still, and the low preset does without it.
 - **The imported tree carries its lighting in its vertices.** Its canopy has no
   texture and no UV coordinates: petal tint and ambient occlusion are baked into
   vertex colours by `tools/extract-tree.mjs`, which is both far smaller than a

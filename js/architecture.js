@@ -11,7 +11,9 @@
  */
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
-import { HALL, OCULUS, SKYLIGHTS, ALCOVES, POOL, BENCHES, PALETTE, OCCLUSION } from './config.js';
+import {
+  HALL, OCULUS, SKYLIGHTS, ALCOVES, POOL, BENCHES, PALETTE, OCCLUSION, CONCRETE_DETAIL
+} from './config.js';
 
 const TAU = Math.PI * 2;
 
@@ -426,7 +428,7 @@ function loftOutline(outline, origin, forward, right, up, depth) {
  * parameterisation entirely — and it gives the swept seating, which carries no
  * UVs at all, a real surface for free.
  */
-export function makeTriplanar(material, scale) {
+export function makeTriplanar(material, scale, detailMap) {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTriScale = { value: scale };
 
@@ -473,9 +475,71 @@ export function makeTriplanar(material, scale) {
                            + texture2D( roughnessMap, tpR.xy ).g * twR.z;
         #endif
       `);
+
+    if (detailMap) addDetailNormal(shader, detailMap);
   };
-  material.customProgramCacheKey = () => 'triplanar' + scale;
+  material.customProgramCacheKey = () => 'triplanar' + scale + (detailMap ? '+detail' : '');
   return material;
+}
+
+/**
+ * Lays the concrete's own normal map over the projection a second time, at a
+ * fraction of the size, close to the lens.
+ *
+ * The map is already generated for the wall and already repeating; what the
+ * surface lacks up close is a frequency, not a texture, so nothing new is
+ * drawn at load and nothing is downloaded. Only the relief is doubled. The
+ * colour is left on its own projection, because the blotches and tie-holes
+ * are the size they are on purpose and a fine tile of them reads as wallpaper.
+ *
+ * The three reads sit inside a test on the fade, so a wall across the room
+ * pays for none of them. That test is per fragment rather than per draw, so
+ * the mip level a read picks is strictly speaking undefined along the edge of
+ * the branch — which is the one place the result is multiplied by a fade of
+ * nearly zero.
+ *
+ * Each projection contributes the slope it carries in its own two axes, which
+ * is mirrored on the far side of each axis: a bump on the +x wall is a dent on
+ * the -x one. Against noise this fine that is not a thing the eye can name,
+ * and the alternative is a tangent frame a projected surface does not have.
+ */
+function addDetailNormal(shader, map) {
+  shader.uniforms.uDetailMap = { value: map };
+  shader.uniforms.uDetailTile = { value: CONCRETE_DETAIL.tile };
+  shader.uniforms.uDetailStrength = { value: CONCRETE_DETAIL.strength };
+  shader.uniforms.uDetailFade = {
+    value: new THREE.Vector2(CONCRETE_DETAIL.fadeNear, CONCRETE_DETAIL.fadeFar)
+  };
+
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', `
+        #include <common>
+        uniform sampler2D uDetailMap;
+        uniform float uDetailTile;
+        uniform float uDetailStrength;
+        uniform vec2 uDetailFade;
+      `)
+    .replace('#include <normal_fragment_maps>', `
+        #include <normal_fragment_maps>
+        {
+          float detailFade = 1.0 - smoothstep( uDetailFade.x, uDetailFade.y,
+                                               distance( vTriPos, cameraPosition ) );
+          if ( detailFade > 0.0 ) {
+            vec3 twN = triWeights();
+            vec3 tpN = vTriPos / uDetailTile;
+            vec2 sX = texture2D( uDetailMap, tpN.zy ).xy * 2.0 - 1.0;
+            vec2 sY = texture2D( uDetailMap, tpN.xz ).xy * 2.0 - 1.0;
+            vec2 sZ = texture2D( uDetailMap, tpN.xy ).xy * 2.0 - 1.0;
+            vec3 slope = twN.x * vec3( 0.0, sX.y, sX.x )
+                       + twN.y * vec3( sY.x, 0.0, sY.y )
+                       + twN.z * vec3( sZ.x, sZ.y, 0.0 );
+            // the shading normal is in view space; the slope is in the
+            // world the projection is measured in
+            normal = normalize( normal + ( viewMatrix * vec4( slope, 0.0 ) ).xyz
+                                         * uDetailStrength * detailFade );
+          }
+        }
+      `);
 }
 
 /* ------------------------------------------------------ room occlusion -- */
@@ -693,6 +757,10 @@ export function buildSanctuary(textures, quality) {
   for (const a of ALCOVES) openings.push(archOpening(a, profile));
 
   /* ---- materials ---- */
+  // The fine tooth is the same normal map at a fraction of the size, so it is
+  // handed to every surface the concrete is projected onto.
+  const tooth = quality.concreteDetail ? textures.concrete.normalMap : null;
+
   const concrete = makeTriplanar(new THREE.MeshStandardMaterial({
     color: PALETTE.concrete,
     map: textures.concrete.map,
@@ -700,7 +768,7 @@ export function buildSanctuary(textures, quality) {
     roughness: 0.94,
     metalness: 0.0,
     side: THREE.FrontSide
-  }), 3.4);
+  }), 3.4, tooth);
 
   const interiorMat = makeTriplanar(new THREE.MeshStandardMaterial({
     color: 0x8e8a83,
@@ -709,7 +777,7 @@ export function buildSanctuary(textures, quality) {
     roughness: 0.94,
     metalness: 0.0,
     side: THREE.DoubleSide
-  }), 3.4);
+  }), 3.4, tooth);
 
   const revealMat = makeTriplanar(new THREE.MeshStandardMaterial({
     color: PALETTE.concreteDeep,
@@ -718,7 +786,7 @@ export function buildSanctuary(textures, quality) {
     roughness: 0.95,
     metalness: 0.0,
     side: THREE.DoubleSide
-  }), 2.2);
+  }), 2.2, tooth);
 
   /* ---- shell ---- */
   const shell = new THREE.Mesh(buildShellMesh(profile, openings, rings, segs), concrete);
@@ -825,7 +893,7 @@ export function buildSanctuary(textures, quality) {
     roughnessMap: textures.concrete.roughnessMap,
     roughness: 0.88,
     metalness: 0.0
-  }), 1.7);
+  }), 1.7, tooth);
   const benchBands = [];
   for (const band of BENCHES) {
     const h = band.height, d = band.depth / 2, ch = 0.045;

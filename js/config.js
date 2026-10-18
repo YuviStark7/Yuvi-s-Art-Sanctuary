@@ -134,6 +134,30 @@ export const OCCLUSION = {
   strength: 0.55
 };
 
+/* The tooth on the concrete, seen from arm's length.
+ *
+ * The wall's projection repeats every few metres, which is right for the room
+ * and wrong for a visitor standing at it: by then one repeat is wider than the
+ * view and the surface goes smooth. This lays the same normal map over it a
+ * second time at a fraction of the size, so there is still something there at
+ * half a metre. Only the relief is doubled, never the colour — a fine tile of
+ * the blotches would read as a pattern rather than as concrete.
+ *
+ * It is drawn only where it can be seen. Past `fadeFar` the tile is finer than
+ * the pixels covering it and would shimmer instead of holding still, so it
+ * fades out and its three texture reads stop being issued at all.
+ *
+ * `tile` is the width of one repeat in metres and `strength` how far it tilts
+ * the surface; the distances are from the lens. `strength: 0` turns it off
+ * everywhere without touching the quality presets.
+ */
+export const CONCRETE_DETAIL = {
+  tile: 0.52,
+  strength: 0.55,
+  fadeNear: 1.6,
+  fadeFar: 4.5
+};
+
 export const RENDER = {
   fov: 62,
   near: 0.06,
