@@ -72,18 +72,7 @@ frame. Keep that property.
 should have a soft edge, and the tree's shadow on the island should stay crisp
 where trunk meets rock.
 
-### 4. Finer concrete up close
-The concrete is procedural and convincing at a distance, but soft when you walk
-up to a wall. Add a detail normal layered at a much higher frequency on top of
-the existing triplanar projection, fading in as the camera gets close.
-
-Do not simply raise the texture resolution — it is generated at load, so a
-larger canvas costs start-up time on every visit.
-
-*How to judge it:* walk right up to a wall between two artworks. It should
-retain fine tooth rather than going smooth.
-
-### 5. A loading screen worth the wait
+### 4. A loading screen worth the wait
 The blossom tree is 4.3 MB and downloads behind the existing progress gate.
 Right now "planting the tree" is a bare progress step. Make the wait feel
 intentional rather than broken on a slow connection.
@@ -93,7 +82,7 @@ Nothing heavy — the gate already exists in `js/ui.js`.
 *How to judge it:* throttle to Slow 3G in devtools and reload. It should read
 as deliberate, never as a hang.
 
-### 6. Real reflection and refraction in the pool
+### 5. Real reflection and refraction in the pool
 The water currently uses an analytic reflection — a pale dome with the oculus
 punched into it — rather than a true reflection pass. Upgrade it, and add
 caustics on the pool basin.
@@ -109,6 +98,20 @@ and moving light should play across the basin floor.
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### Finer concrete up close
+The same normal map the wall already carries is projected a second time at
+half a metre across and added to the shading normal, so the concrete keeps a
+tooth at arm's length. Nothing new is generated at load and nothing is
+downloaded: the map was built for the wall and was not being read at all,
+since the triplanar patch owns the map and roughness hooks and never set up a
+normal. The three extra reads sit behind the fade, so a wall across the room
+issues none of them. High and medium; off at low via `concreteDetail`, and
+`CONCRETE_DETAIL` in `js/config.js` sets the tile, the strength and the two
+fade distances without a revert — `strength: 0` turns it off everywhere.
+**Not yet looked at on screen**, and the thing most likely to be wrong is the
+amount: 0.55 of the map's slope may read as sandpaper rather than as concrete.
+(PR #15)
 
 ### Keep the camera inside the building
 The arm is tested along its whole length instead of only at its end, and
