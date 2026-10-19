@@ -42,24 +42,7 @@ top. Its face should read as facing where it walks, its right hand should stay
 on your left, and its arms should swing clear of its hips from every angle. If
 any of that is still wrong, say which — these are no longer one fault.
 
-### 2. Make the figure probe read the figure, not a copy of it
-`tools/probe-figure.mjs` restates the constants in `js/character.js` by hand
-instead of importing them, and the two have already drifted. The probe still
-places the arm at `s * X.shoulder` and authors the hand on the centre line, so
-it measures the figure as it was *before* PRs #8 and #11. Run it today and it
-reports the hands 266 mm out of the body, which is no longer true — the tool
-bought to check the figure now lies about it.
-
-Import the shared numbers from `js/character.js` rather than restating them, or
-lift them into a small module both files import. Either way the probe must fail
-loudly if a constant it depends on disappears, rather than quietly measuring a
-figure nobody ships.
-
-*How to judge it:* run `node tools/probe-figure.mjs`. The two hand rows should
-fall to nothing, because the hands are fixed. Whatever is still listed is real,
-and is the arm overlap item 1 leaves open.
-
-### 3. Softer shadow edges
+### 2. Softer shadow edges
 Shadows are currently a single hard-ish map. A PCSS-style or wider PCF filter
 would suit overcast light much better — contact-sharp near the floor, soft
 further away.
@@ -72,7 +55,7 @@ frame. Keep that property.
 should have a soft edge, and the tree's shadow on the island should stay crisp
 where trunk meets rock.
 
-### 4. Finer concrete up close
+### 3. Finer concrete up close
 The concrete is procedural and convincing at a distance, but soft when you walk
 up to a wall. Add a detail normal layered at a much higher frequency on top of
 the existing triplanar projection, fading in as the camera gets close.
@@ -83,7 +66,7 @@ larger canvas costs start-up time on every visit.
 *How to judge it:* walk right up to a wall between two artworks. It should
 retain fine tooth rather than going smooth.
 
-### 5. A loading screen worth the wait
+### 4. A loading screen worth the wait
 The blossom tree is 4.3 MB and downloads behind the existing progress gate.
 Right now "planting the tree" is a bare progress step. Make the wait feel
 intentional rather than broken on a slow connection.
@@ -93,7 +76,7 @@ Nothing heavy — the gate already exists in `js/ui.js`.
 *How to judge it:* throttle to Slow 3G in devtools and reload. It should read
 as deliberate, never as a hang.
 
-### 6. Real reflection and refraction in the pool
+### 5. Real reflection and refraction in the pool
 The water currently uses an analytic reflection — a pale dome with the oculus
 punched into it — rather than a true reflection pass. Upgrade it, and add
 caustics on the pool basin.
@@ -109,6 +92,19 @@ and moving light should play across the basin floor.
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### The figure probe now reads the figure
+`js/figure.metrics.js` is the only place the figure is described, and
+`js/character.js` and `tools/probe-figure.mjs` both read it rather than keeping
+a copy; the probe refuses to run at all if a measurement it depends on stops
+being a number. Measured against the figure as it actually ships, the two hand
+rows fall to nothing, where the probe had been reporting the hands 266 mm out
+of the body, and the bare arm against the torso falls from 17 vertices and
+22.1 mm to 6 and 12.2 mm, which is PR #11 showing up at last. The figure
+itself does not change: every lifted number and every weighting decision was
+compared against what `character.js` used to compute and is identical. The
+walk pose is still written out twice, because the frame loop drives live bones
+and cannot hand its pose over.
 
 ### Keep the camera inside the building
 The arm is tested along its whole length instead of only at its end, and

@@ -338,6 +338,7 @@ js/
   gallery.js        where the work hangs, how it is lit and labelled
   wardrobe.js       ← brand placements go here
   character.js      the figure, its clothes and how it moves
+  figure.metrics.js the figure's measurements, read by tools/ as well
   coin.js           coins in flight, and the pile on the basin floor
   wishes.js         payment and the wish book
   payments.config.js  ← Stripe and Supabase settings
