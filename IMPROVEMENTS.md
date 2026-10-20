@@ -111,7 +111,7 @@ never sees it. Where there is no content length and so no honest fraction to
 draw, the bar sweeps rather than standing still. `LOADING.patience` to
 Infinity and `LOADING.sweep` to false give the old screen back exactly.
 **Not looked at on screen** — the copy, the spacing of the second line and the
-sweep on a one-pixel rule are all unseen. (PR #PRNUM)
+sweep on a one-pixel rule are all unseen. (PR #16)
 
 ### Keep the camera inside the building
 The arm is tested along its whole length instead of only at its end, and
