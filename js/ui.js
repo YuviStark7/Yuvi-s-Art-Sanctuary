@@ -5,6 +5,7 @@
  */
 import { WARDROBE, FIGURE, WARDROBE_COPY } from './wardrobe.js';
 import { WISHING_COPY } from './payments.config.js';
+import { LOADING } from './config.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -29,7 +30,8 @@ export class UI {
     this.wishOpen = false;
 
     this.el = {
-      loading: $('loading'), bar: $('bar-fill'), loadNote: $('load-note'),
+      loading: $('loading'), bar: $('bar-fill'), barTrack: $('bar'),
+      loadNote: $('load-note'), loadDetail: $('load-detail'),
       gate: $('gate'), gateSub: $('gate-sub'), gateStatement: $('gate-statement'),
       enter: $('enter'), watch: $('watch'),
 
@@ -138,7 +140,64 @@ export class UI {
     if (note) this.el.loadNote.textContent = note;
   }
 
-  finishLoading() { this.el.loading.classList.add('hidden'); }
+  /**
+   * Marks the step now running as one that may take a long time.
+   *
+   * Only the tree is ever slow enough to need this: it is the one file
+   * fetched over the network, and 4.3 MB on a poor connection holds the bar
+   * inside six per cent of its width for well over a minute. From the
+   * outside that is indistinguishable from a page that has died. So a long
+   * wait accounts for itself — what it is fetching, how much of it has
+   * landed, and that the visit goes ahead without it.
+   *
+   * It stays silent for the first `LOADING.patience` seconds, because a wait
+   * that is over quickly never needed explaining and the line would only
+   * flicker past on a fast connection.
+   */
+  beginWait(subject, reassurance) {
+    this.endWait();
+    this._wait = { subject, reassurance, since: performance.now(), loaded: 0, total: null };
+    // on a timer rather than on the progress events, because a connection
+    // that has stalled outright stops sending those and that is exactly the
+    // case this line exists for
+    this._wait.tick = setInterval(() => this._drawWait(), 500);
+  }
+
+  /** Bytes in so far, and bytes expected — the latter often unknowable. */
+  waitBytes(loaded, total) {
+    if (!this._wait) return;
+    this._wait.loaded = loaded || 0;
+    this._wait.total = total || null;
+    this._drawWait();
+  }
+
+  endWait() {
+    if (!this._wait) return;
+    clearInterval(this._wait.tick);
+    this._wait = null;
+    this.el.barTrack.classList.remove('waiting');
+    this.el.loadDetail.textContent = '';
+  }
+
+  _drawWait() {
+    const w = this._wait;
+    if (!w || (performance.now() - w.since) / 1000 < LOADING.patience) return;
+
+    // with no content length there is no honest fraction to draw, so the bar
+    // shows it is alive instead of claiming ground it cannot measure
+    this.el.barTrack.classList.toggle('waiting', LOADING.sweep && w.total === null);
+
+    const mb = (n) => (n / 1048576).toFixed(1);
+    const counted = w.total ? `${mb(w.loaded)} of ${mb(w.total)} MB`
+                  : w.loaded ? `${mb(w.loaded)} MB so far`
+                  : w.subject;
+    this.el.loadDetail.textContent = `${counted} · ${w.reassurance}`;
+  }
+
+  finishLoading() {
+    this.endWait();
+    this.el.loading.classList.add('hidden');
+  }
 
   /* --------------------------------------------------------------- gate */
 

@@ -134,6 +134,22 @@ export const OCCLUSION = {
   strength: 0.55
 };
 
+/**
+ * How the loading screen behaves while it waits on something slow.
+ *
+ * Only the tree is ever slow: it is the one file fetched over the network, at
+ * 4.3 MB, and on a poor connection it holds the bar still for a minute and a
+ * half. `patience` is how long a step may sit before the screen explains
+ * itself; `sweep` is the slow travelling highlight shown when the server sends
+ * no content length and there is no honest fraction to draw. Set `patience` to
+ * Infinity and `sweep` to false and the loading screen behaves exactly as it
+ * did before.
+ */
+export const LOADING = {
+  patience: 6,
+  sweep: true
+};
+
 export const RENDER = {
   fov: 62,
   near: 0.06,

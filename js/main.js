@@ -801,10 +801,14 @@ async function boot() {
 
   if (TREE.model === 'blossom') {
     ui.progress(0.74, 'planting the tree');
+    // the only step that is ever a real wait, so it is the only one that
+    // gets to explain itself
+    ui.beginWait('the blossom tree', 'the room will open without it');
     await nextFrame();
     try {
-      app.treeModel = await loadModel(TREE.modelUrl, (f) => {
-        ui.progress(0.74 + f * 0.06, 'planting the tree');
+      app.treeModel = await loadModel(TREE.modelUrl, (f, loaded, total) => {
+        if (f !== null) ui.progress(0.74 + f * 0.06, 'planting the tree');
+        ui.waitBytes(loaded, total);
       });
     } catch (err) {
       // A missing or broken model is not worth failing the whole visit over;
@@ -812,6 +816,7 @@ async function boot() {
       console.warn('blossom tree unavailable, growing one instead:', err);
       app.treeModel = null;
     }
+    ui.endWait();
   }
 
   character = new Character(app.textures);
@@ -856,6 +861,7 @@ async function boot() {
 
 boot().catch((err) => {
   console.error(err);
+  ui.endWait();
   ui.progress(1, 'something went wrong — see the browser console');
 });
 

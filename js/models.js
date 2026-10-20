@@ -24,7 +24,12 @@ function getLoader() {
 
 /**
  * Fetch and parse a .glb. Resolves to the gltf object, or rejects.
- * onProgress receives 0..1, but only when the server sends a content length.
+ *
+ * onProgress receives the fraction done, the bytes in so far, and the bytes
+ * expected. A server that sends no content length — any gzipped or chunked
+ * response — gives no fraction and no total, only a rising byte count, and
+ * the caller is told that plainly as nulls rather than left to infer a stall
+ * from a fraction that never arrives.
  */
 export function loadModel(url, onProgress) {
   if (cache.has(url)) return cache.get(url);
@@ -37,9 +42,10 @@ export function loadModel(url, onProgress) {
         resolve(gltf);
       },
       (evt) => {
-        if (onProgress && evt.lengthComputable && evt.total > 0) {
-          onProgress(Math.min(1, evt.loaded / evt.total));
-        }
+        if (!onProgress) return;
+        const sized = evt.lengthComputable && evt.total > 0;
+        onProgress(sized ? Math.min(1, evt.loaded / evt.total) : null,
+                   evt.loaded, sized ? evt.total : null);
       },
       (err) => {
         cache.delete(url);           // let a later attempt retry

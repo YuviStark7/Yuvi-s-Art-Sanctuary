@@ -83,17 +83,7 @@ larger canvas costs start-up time on every visit.
 *How to judge it:* walk right up to a wall between two artworks. It should
 retain fine tooth rather than going smooth.
 
-### 5. A loading screen worth the wait
-The blossom tree is 4.3 MB and downloads behind the existing progress gate.
-Right now "planting the tree" is a bare progress step. Make the wait feel
-intentional rather than broken on a slow connection.
-
-Nothing heavy — the gate already exists in `js/ui.js`.
-
-*How to judge it:* throttle to Slow 3G in devtools and reload. It should read
-as deliberate, never as a hang.
-
-### 6. Real reflection and refraction in the pool
+### 5. Real reflection and refraction in the pool
 The water currently uses an analytic reflection — a pale dome with the oculus
 punched into it — rather than a true reflection pass. Upgrade it, and add
 caustics on the pool basin.
@@ -109,6 +99,19 @@ and moving light should play across the basin floor.
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### A loading screen worth the wait
+The tree was the only step that could ever be a real wait, and it was the one
+step that said the least: the bar crawled through six per cent of its width
+for however long 4.3 MB took, and said nothing at all when the server sent no
+content length to crawl against. It now accounts for itself — the megabytes as
+they land, the subject when none have, and that the room opens without the
+tree either way — but only after `LOADING.patience` seconds, so a fast visit
+never sees it. Where there is no content length and so no honest fraction to
+draw, the bar sweeps rather than standing still. `LOADING.patience` to
+Infinity and `LOADING.sweep` to false give the old screen back exactly.
+**Not looked at on screen** — the copy, the spacing of the second line and the
+sweep on a one-pixel rule are all unseen. (PR #16)
 
 ### Keep the camera inside the building
 The arm is tested along its whole length instead of only at its end, and
