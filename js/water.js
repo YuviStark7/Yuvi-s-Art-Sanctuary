@@ -2,14 +2,19 @@
  * Water: the circular pool, the curtain falling from the oculus, and the mist
  * where the two meet.
  *
- * The pool surface does not use a reflection pass. It reflects an analytic
- * room instead — a bright dome with the oculus punched into it — which is
- * cheap, stable, and makes the opening dance across the ripples exactly the
- * way it does in the reference image.
+ * At medium and low the pool surface uses no reflection pass. It reflects an
+ * analytic room instead — a bright dome with the oculus punched into it —
+ * which is cheap, stable, and makes the opening dance across the ripples
+ * exactly the way it does in the reference image.
+ *
+ * At high it mirrors the room for real, and looks down through the surface to
+ * a basin whose shape is known rather than rendered. Both are `#define`s, so
+ * the two cheaper presets compile the shader this file has always compiled.
  */
 import * as THREE from 'three';
-import { POOL, CURTAIN, OCULUS, HALL, PALETTE, OCCLUSION } from './config.js';
-import { makeTriplanar, makeRoomOcclusion } from './architecture.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
+import { POOL, CURTAIN, OCULUS, HALL, ISLAND, PALETTE, OCCLUSION } from './config.js';
+import { makeTriplanar, makeRoomOcclusion, guardReflector } from './architecture.js';
 
 const GLSL_NOISE = /* glsl */`
   float hash11( float p ) {
@@ -36,6 +41,21 @@ const GLSL_NOISE = /* glsl */`
     float s = 0.0, a = 0.5;
     for ( int i = 0; i < 4; i++ ) { s += a * vnoise( p ); p *= 2.02; a *= 0.5; }
     return s;
+  }
+`;
+
+/**
+ * Caustics, as the thin bright filaments left where two drifting fields of
+ * the same water agree. Pushing the ridge hard is what makes them filaments
+ * rather than blotches, which is the whole character of the thing: a wave
+ * lensing light onto the floor focuses it into a line, not a cloud.
+ */
+const GLSL_CAUSTIC = /* glsl */`
+  float causticWeb( vec2 p, float t ) {
+    float a = fbm2( p * 1.65 + vec2(  t * 0.13, -t * 0.10 ) );
+    float b = fbm2( p * 2.10 + vec2( -t * 0.09,  t * 0.15 ) );
+    float ridge = 1.0 - abs( a - b ) * 2.8;
+    return pow( clamp( ridge, 0.0, 1.0 ), 6.0 );
   }
 `;
 
@@ -77,7 +97,10 @@ export function buildPool(textures, quality) {
 
 /* -------------------------------------------------------- water surface -- */
 
-export function buildWaterSurface(textures, oculusRimY) {
+export function buildWaterSurface(textures, oculusRimY, quality) {
+  const mirrored = !!(quality && quality.poolReflection);
+  const caustics = !!(quality && quality.poolCaustics);
+
   const uniforms = {
     uTime: { value: 0 },
     uRipple: { value: textures.waterNormal },
@@ -92,20 +115,42 @@ export function buildWaterSurface(textures, oculusRimY) {
     uAgitation: { value: 1.0 },
     // where the last coin went in, and how long ago (negative = none)
     uSplashPos: { value: new THREE.Vector2(0, 0) },
-    uSplashAge: { value: -1.0 }
+    uSplashAge: { value: -1.0 },
+    // the mirrored room, filled in below only when the preset pays for it
+    uReflect: { value: null },
+    uReflectMatrix: { value: new THREE.Matrix4() },
+    uReflectDistort: { value: 0.055 },
+    // the basin the refracted ray lands on, as numbers rather than geometry
+    uFloorY: { value: -POOL.depth },
+    uIslandR: { value: ISLAND.radius },
+    uCaustic: { value: 0.40 }
   };
+
+  const defines = {};
+  if (mirrored) defines.USE_POOL_REFLECTION = '';
+  if (caustics) defines.USE_POOL_CAUSTICS = '';
 
   const material = new THREE.ShaderMaterial({
     uniforms,
+    defines,
     transparent: true,
     side: THREE.DoubleSide,
     vertexShader: /* glsl */`
       varying vec3 vWorld;
       varying vec2 vXZ;
+      #ifdef USE_POOL_REFLECTION
+        uniform mat4 uReflectMatrix;
+        varying vec4 vReflect;
+      #endif
       void main() {
         vec4 w = modelMatrix * vec4( position, 1.0 );
         vWorld = w.xyz;
         vXZ = w.xz;
+        #ifdef USE_POOL_REFLECTION
+          // the reflector shares this mesh's transform exactly, so its own
+          // texture matrix takes this position unchanged
+          vReflect = uReflectMatrix * vec4( position, 1.0 );
+        #endif
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
     fragmentShader: /* glsl */`
@@ -117,8 +162,17 @@ export function buildWaterSurface(textures, oculusRimY) {
       uniform float uSplashAge;
       varying vec3 vWorld;
       varying vec2 vXZ;
+      #ifdef USE_POOL_REFLECTION
+        uniform sampler2D uReflect;
+        uniform float uReflectDistort;
+        varying vec4 vReflect;
+      #endif
+      #ifdef USE_POOL_CAUSTICS
+        uniform float uFloorY, uIslandR, uCaustic;
+      #endif
 
       ${GLSL_NOISE}
+      ${caustics ? GLSL_CAUSTIC : ''}
 
       vec3 sampleRipple( vec2 uv ) {
         return texture2D( uRipple, uv ).xyz * 2.0 - 1.0;
@@ -169,6 +223,20 @@ export function buildWaterSurface(textures, oculusRimY) {
 
         vec3 Rv = reflect( -V, nrm );
 
+      #ifdef USE_POOL_REFLECTION
+
+        /* the room itself, mirrored through the surface */
+        vec2 ruv = vReflect.xy / max( vReflect.w, 1e-4 );
+        // the ripple normal is what breaks the mirror up; sampled straight,
+        // the reflection is glassy and reads as a photograph lying on the water
+        ruv += nrm.xz * uReflectDistort;
+        vec3 env = texture2D( uReflect, clamp( ruv, 0.002, 0.998 ) ).rgb;
+        // the mirrored image runs out of room at the horizon, so the pale
+        // dome takes back over where the reflected ray is nearly flat
+        env = mix( env, uSky, smoothstep( 0.35, 0.02, abs( Rv.y ) ) * 0.45 );
+
+      #else
+
         /* the analytic room: pale dome, bright hole where the oculus is */
         float up = clamp( Rv.y, 0.0, 1.0 );
         vec3 env = mix( uWall, uSky, smoothstep( 0.05, 0.75, up ) );
@@ -180,10 +248,36 @@ export function buildWaterSurface(textures, oculusRimY) {
           env += vec3( 1.0 ) * disc * 1.85;
         }
 
+      #endif
+
+      #ifdef USE_POOL_CAUSTICS
+
+        /* down through the surface to a basin whose shape is known */
+        vec3 Rr = refract( -V, nrm, 1.0 / 1.333 );
+        float march = Rr.y < -1e-3 ? ( uFloorY - vWorld.y ) / Rr.y : 6.0;
+        march = clamp( march, 0.0, 6.0 );
+        vec3 floorHit = vWorld + Rr * march;
+        // the island climbs out of the middle, so the water over it is a
+        // fraction as deep as the open basin and carries far less colour
+        float shallow = smoothstep( uIslandR + 0.9, uIslandR, length( floorHit.xz ) );
+        float path = mix( march, march * 0.25, shallow );
+
+        /* what the water takes out of the light on the way down and back */
+        vec3 body = mix( uTint, uDeep, 1.0 - exp( -path * 1.25 ) );
+
+        // caustics are anchored to where the ray lands, not to the surface,
+        // so they stay put on the floor as the camera moves over them
+        float web = causticWeb( floorHit.xz, t );
+        body += vec3( 0.95, 1.00, 0.98 ) * web * uCaustic * exp( -path * 0.55 );
+
+      #else
+
         /* what little you see of the basin */
         vec3 body = mix( uDeep, uTint, 0.45 );
         float depthFade = smoothstep( 0.0, 1.6, abs( d ) );
         body = mix( body * 1.12, body, depthFade );
+
+      #endif
 
         vec3 col = mix( body, env, fres );
 
@@ -213,7 +307,33 @@ export function buildWaterSurface(textures, oculusRimY) {
   mesh.name = 'waterSurface';
   mesh.renderOrder = 2;
 
-  return { mesh, uniforms };
+  let reflector = null;
+  if (mirrored) {
+    // A child at identity shares the surface's plane exactly, which is what
+    // lets the shader above feed the reflector's own texture matrix the
+    // surface's own vertex positions. It is never drawn — the render target
+    // it fills is the only reason it is in the room — so it writes neither
+    // colour nor depth, and it keeps the full-sized disc so that it is culled
+    // when, and only when, the water is.
+    reflector = new Reflector(new THREE.CircleGeometry(POOL.radius - 0.015, 64), {
+      textureWidth: quality.poolReflectionSize,
+      textureHeight: quality.poolReflectionSize,
+      color: 0xffffff,
+      multisample: 0
+    });
+    reflector.material.colorWrite = false;
+    reflector.material.depthWrite = false;
+    reflector.renderOrder = 0;
+    guardReflector(reflector);
+    mesh.add(reflector);
+
+    // both of these are live: Reflector fills the target and rewrites the
+    // matrix in place every time its pass runs
+    uniforms.uReflect.value = reflector.getRenderTarget().texture;
+    uniforms.uReflectMatrix.value = reflector.material.uniforms.textureMatrix.value;
+  }
+
+  return { mesh, uniforms, reflector };
 }
 
 /* --------------------------------------------------------- water curtain -- */

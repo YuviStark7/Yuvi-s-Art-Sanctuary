@@ -31,6 +31,7 @@ const QUALITY = {
   high: {
     shellRings: 150, shellSegments: 352,
     floorReflection: true, reflectionSize: 1024,
+    poolReflection: true, poolReflectionSize: 512, poolCaustics: true,
     bloom: true, bloomStrength: 0.34,
     shadowMap: 4096, chamberShadows: true, roomAO: true,
     mist: 1100, msaa: 4, maxPixelRatio: 2,
@@ -39,6 +40,7 @@ const QUALITY = {
   medium: {
     shellRings: 118, shellSegments: 280,
     floorReflection: true, reflectionSize: 512,
+    poolReflection: false, poolReflectionSize: 256, poolCaustics: false,
     bloom: true, bloomStrength: 0.30,
     shadowMap: 2048, chamberShadows: false, roomAO: true,
     mist: 650, msaa: 0, maxPixelRatio: 1.5,
@@ -47,6 +49,7 @@ const QUALITY = {
   low: {
     shellRings: 86, shellSegments: 208,
     floorReflection: false, reflectionSize: 256,
+    poolReflection: false, poolReflectionSize: 0, poolCaustics: false,
     bloom: false, bloomStrength: 0,
     shadowMap: 1024, chamberShadows: false, roomAO: false,
     mist: 260, msaa: 0, maxPixelRatio: 1,
@@ -265,7 +268,7 @@ function buildWorld(quality) {
   const pool = buildPool(app.textures, quality);
   root.add(pool.group);
 
-  const water = buildWaterSurface(app.textures, rimY);
+  const water = buildWaterSurface(app.textures, rimY, quality);
   root.add(water.mesh);
   animated.push(water.uniforms);
 
