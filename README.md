@@ -379,9 +379,12 @@ A few decisions worth knowing about if you go poking around:
 - **The dome casts its own shadow**, so daylight only reaches the floor through
   the openings. The building and the sun never move, so the shadow map is drawn
   once at load and then frozen — the pools of light on the floor are free.
-- **The pool does not use a reflection pass.** It reflects an analytic room
-  instead: a pale dome with the oculus punched into it. Cheap, stable, and it
-  makes the opening dance across the ripples.
+- **The pool reflects an analytic room below the high preset.** A pale dome
+  with the oculus punched into it: cheap, stable, and it makes the opening
+  dance across the ripples. At high it mirrors the room for real and looks
+  down through the surface to a basin whose shape is known rather than
+  rendered, with caustics anchored to where the refracted ray lands. Both are
+  `#define`s, so the cheaper presets compile the shader they always did.
 - **The tree is grown, not modelled** — a recursive skeleton swept into tapered
   tubes, with about 2,300 leaf clusters hung on the tips as instanced quads
   that drift in a slow wind.

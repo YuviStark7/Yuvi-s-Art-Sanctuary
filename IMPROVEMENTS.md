@@ -93,22 +93,22 @@ Nothing heavy — the gate already exists in `js/ui.js`.
 *How to judge it:* throttle to Slow 3G in devtools and reload. It should read
 as deliberate, never as a hang.
 
-### 6. Real reflection and refraction in the pool
-The water currently uses an analytic reflection — a pale dome with the oculus
-punched into it — rather than a true reflection pass. Upgrade it, and add
-caustics on the pool basin.
-
-This is the most expensive item here. It must be **high preset only** and must
-not regress the current 4.1 ms frame cost at medium.
-
-*How to judge it:* the tree and the falling curtain should appear in the water,
-and moving light should play across the basin floor.
-
 ---
 
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### Real reflection and refraction in the pool
+The pool mirrors the room for real through a second `Reflector`, and looks
+down through its own surface to a basin whose shape is known rather than
+rendered — refracted depth by Beer's law, with a caustic web anchored to where
+the refracted ray lands. Both are `#define`s off a preset flag
+(`poolReflection`, `poolCaustics`), so medium and low compile the fragment
+shader they compiled before, proven byte-identical after preprocessing. Two
+reflection passes in one room would otherwise nest, so `guardReflector()` lets
+only one run at a time; high pays one extra scene render, medium and low none.
+**Looked at by nobody — the appearance is unverified.** (PR #17)
 
 ### Keep the camera inside the building
 The arm is tested along its whole length instead of only at its end, and
