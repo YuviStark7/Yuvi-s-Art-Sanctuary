@@ -5,7 +5,7 @@
  * The daily improvement routine cannot see the render, which makes the figure
  * the one part of the sanctuary it is nearly blind to: a skinning fault reads
  * as perfectly sensible code and only shows up on screen. This closes some of
- * that gap. It rebuilds the skeleton and the limb tubes from the same numbers
+ * that gap. It rebuilds the skeleton and the limb tubes from the numbers
  * `js/character.js` uses, drives them with the same walk pose, and then asks
  * the one question a still image cannot answer: does any limb surface cross
  * the body surface as the figure walks?
@@ -22,79 +22,101 @@
  *
  *   node tools/probe-figure.mjs
  *
- * Numbers mirror js/character.js, the way tools/rig-figure.mjs mirrors them.
+ * Every dimension comes from `js/figure.js`, which `js/character.js` also
+ * imports, because this file used to transcribe them and the copy drifted
+ * within two merges — it went on reporting the hands a quarter of a metre
+ * outside the body long after they had been carried out onto the wrists. What
+ * is still mirrored here rather than imported is the three pieces of
+ * behaviour that need three.js or the DOM to run: the vertex positions
+ * `loftTube()` and `slab()` would produce, the weights `skinChain()` would
+ * assign, and the pose `Character.update()` drives. Those are checked by
+ * reading both; the numbers no longer have to be.
  */
 import * as THREE from '../vendor/three/three.module.min.js';
+import {
+  Y, X, B, BONES, CHAINS, BAND, TORSO, ARM_OFFSET, HAND_SLABS,
+  armSections, legSections, sleeveSections, trouserSections,
+  topBodySections, seatSections, sectionAt
+} from '../js/figure.js';
 
-/* the figure, in metres off the floor (mirrors js/character.js) */
-const Y = {
-  hips: 0.95, spine: 1.09, chest: 1.26, neck: 1.44, head: 1.615,
-  shoulder: 1.41, elbow: 1.13, wrist: 0.88,
-  knee: 0.51, ankle: 0.09
-};
-const X = { shoulder: 0.183, leg: 0.084 };
+/* --------------------------------------------------------------- guards -- */
 
-const BONES = [
-  'hips', 'spine', 'chest', 'neck', 'head',
-  'shoulderL', 'elbowL', 'wristL',
-  'shoulderR', 'elbowR', 'wristR',
-  'hipL', 'kneeL', 'ankleL',
-  'hipR', 'kneeR', 'ankleR'
-];
-const B = {}; BONES.forEach((n, i) => { B[n] = i; });
+/**
+ * A number that has gone missing from `js/figure.js` must stop the probe, not
+ * flow through it. A deleted export already fails at link time, but a renamed
+ * key inside one would quietly become `undefined`, and every comparison
+ * against the NaN that follows is false — which reads as a figure with
+ * nothing wrong with it. That is the one answer this tool must never give.
+ */
+function demand(label, value) {
+  if (Number.isFinite(value)) return value;
+  console.error(`probe: js/figure.js no longer defines a number for ${label}.`);
+  console.error('The probe measures the figure js/character.js builds, so follow the');
+  console.error('rename rather than restating the number here.');
+  process.exit(2);
+}
 
-const CHAINS = {
-  armL: [{ bone: B.shoulderL, y: Y.shoulder }, { bone: B.elbowL, y: Y.elbow },
-         { bone: B.wristL, y: Y.wrist }],
-  armR: [{ bone: B.shoulderR, y: Y.shoulder }, { bone: B.elbowR, y: Y.elbow },
-         { bone: B.wristR, y: Y.wrist }],
-  legL: [{ bone: B.hipL, y: Y.hips }, { bone: B.kneeL, y: Y.knee },
-         { bone: B.ankleL, y: Y.ankle }],
-  legR: [{ bone: B.hipR, y: Y.hips }, { bone: B.kneeR, y: Y.knee },
-         { bone: B.ankleR, y: Y.ankle }]
-};
+function demandStack(label, sections) {
+  if (!Array.isArray(sections) || sections.length === 0) {
+    console.error(`probe: js/figure.js no longer yields a section stack for ${label}.`);
+    process.exit(2);
+  }
+  sections.forEach((s, i) => {
+    demand(`${label}[${i}].y`, s.y);
+    demand(`${label}[${i}].rx`, s.rx);
+    demand(`${label}[${i}].rz`, s.rz);
+  });
+  return sections;
+}
 
-const TORSO = [
-  { y: 0.828, rx: 0.144, rz: 0.104 }, { y: 0.878, rx: 0.155, rz: 0.111 },
-  { y: 0.930, rx: 0.158, rz: 0.113 }, { y: 1.010, rx: 0.141, rz: 0.100 },
-  { y: 1.110, rx: 0.132, rz: 0.094 }, { y: 1.190, rx: 0.140, rz: 0.099 },
-  { y: 1.270, rx: 0.156, rz: 0.107 }, { y: 1.345, rx: 0.166, rz: 0.111 },
-  { y: 1.408, rx: 0.157, rz: 0.102 }, { y: 1.448, rx: 0.116, rz: 0.088 }
-];
-const ARM_STOPS = [
-  { y: Y.shoulder + 0.03, r: 0.055 },
-  { y: Y.elbow, r: 0.0425 },
-  { y: Y.wrist, r: 0.0335 }
-];
-const LEG_STOPS = [
-  { y: Y.hips + 0.02, r: 0.0855 },
-  { y: Y.knee, r: 0.0615 },
-  { y: Y.ankle, r: 0.0425 }
-];
+for (const k of ['hips', 'spine', 'chest', 'neck', 'head',
+                 'shoulder', 'elbow', 'wrist', 'knee', 'ankle']) demand(`Y.${k}`, Y[k]);
+for (const k of ['shoulder', 'leg']) demand(`X.${k}`, X[k]);
+for (const k of BONES) demand(`B.${k}`, B[k]);
+demand('ARM_OFFSET', ARM_OFFSET);
+demand('BAND.arm', BAND.arm);
+demand('BAND.leg', BAND.leg);
+for (const k of ['armL', 'armR', 'legL', 'legR']) {
+  if (!Array.isArray(CHAINS[k]) || CHAINS[k].length !== 3) {
+    console.error(`probe: js/figure.js no longer describes CHAINS.${k} as three bones.`);
+    process.exit(2);
+  }
+  CHAINS[k].forEach((c, i) => { demand(`CHAINS.${k}[${i}].y`, c.y); });
+}
+HAND_SLABS.forEach((h, i) => {
+  for (const k of ['w', 'h', 'd', 'r', 'segs', 'x', 'y', 'z']) demand(`HAND_SLABS[${i}].${k}`, h[k]);
+});
+
+/**
+ * Every stack the probe measures, built here rather than where it is used, so
+ * that one which has stopped being a stack is caught before a single row is
+ * printed instead of halfway down the report — or, worse, by `taper()` itself,
+ * which would throw out of `js/figure.js` and read like a bug in the figure.
+ */
+const STACKS = (() => {
+  try {
+    return {
+      torso: demandStack('TORSO', TORSO),
+      arm: demandStack('arm', armSections()),
+      leg: demandStack('leg', legSections()),
+      shortSleeve: demandStack('short sleeve', sleeveSections(false)),
+      longSleeve: demandStack('long sleeve', sleeveSections(true)),
+      trouser: demandStack('trouser leg', trouserSections(true)),
+      shirt: demandStack('shirt body', topBodySections()),
+      seat: demandStack('seat', seatSections())
+    };
+  } catch (e) {
+    console.error("probe: js/figure.js could not build the figure's section stacks.");
+    console.error(`  ${e && e.message ? e.message : e}`);
+    process.exit(2);
+  }
+})();
 
 /** Above this the torso closes into a dome, so the ellipse stack stops being
- *  a fair description of it. */
-const STACK_TOP = 1.41;
+ *  a fair description of it. That is the shoulder line. */
+const STACK_TOP = Y.shoulder;
 
 /* ------------------------------------------------------------- geometry -- */
-
-function taper(stops, bulge) {
-  const secs = [];
-  const span = stops[stops.length - 1].y - stops[0].y || 1;
-  for (let i = 0; i < stops.length - 1; i++) {
-    const a = stops[i], b = stops[i + 1];
-    for (let k = 0; k < 4; k++) {
-      const t = k / 4;
-      const y = a.y + (b.y - a.y) * t;
-      let r = a.r + (b.r - a.r) * t;
-      if (bulge) r *= 1 + Math.sin(((y - stops[0].y) / span) * Math.PI) * bulge;
-      secs.push({ y, rx: r, rz: r * 0.93 });
-    }
-  }
-  const last = stops[stops.length - 1];
-  secs.push({ y: last.y, rx: last.r, rz: last.r * 0.93 });
-  return secs.sort((p, q) => p.y - q.y);
-}
 
 /** loftTube()'s vertices, domed caps included. Positions are all we need. */
 function loftPoints(sections, radial, capBottom, capTop, ox) {
@@ -121,9 +143,9 @@ function loftPoints(sections, radial, capBottom, capTop, ox) {
   return pts;
 }
 
-/** slab()'s vertices, for the hand. */
-function slabPoints(w, h, d, r) {
-  const geo = new THREE.BoxGeometry(w, h, d, 3, 3, 3);
+/** slab()'s vertices. */
+function slabPoints(w, h, d, r, segs) {
+  const geo = new THREE.BoxGeometry(w, h, d, segs, segs, segs);
   const p = geo.attributes.position;
   const hx = Math.max(0, w / 2 - r), hy = Math.max(0, h / 2 - r), hz = Math.max(0, d / 2 - r);
   const v = new THREE.Vector3(), c = new THREE.Vector3();
@@ -139,23 +161,24 @@ function slabPoints(w, h, d, r) {
   return pts;
 }
 
-function inflate(sections, pad, from, to) {
-  return sections
-    .filter((s) => s.y >= (from === undefined ? -9 : from) && s.y <= (to === undefined ? 9 : to))
-    .map((s) => ({ y: s.y, rx: s.rx + pad, rz: s.rz + pad }));
-}
-
-function sectionAt(sections, y) {
-  if (y <= sections[0].y) return sections[0];
-  const last = sections[sections.length - 1];
-  if (y >= last.y) return last;
-  for (let i = 1; i < sections.length; i++) {
-    if (y > sections[i].y) continue;
-    const a = sections[i - 1], b = sections[i];
-    const k = (y - a.y) / (b.y - a.y || 1);
-    return { rx: a.rx + (b.rx - a.rx) * k, rz: a.rz + (b.rz - a.rz) * k };
+/**
+ * The hand: `HAND_SLABS` laid out the way `_handGeometry()` lays them out,
+ * tilted and carried out to the wrist by `ARM_OFFSET`. The finger grooves are
+ * left out — they are a surface detail cut into the fingers, and a four
+ * millimetre cylinder is never what leaves the body first.
+ */
+function handPoints(s) {
+  const pts = [];
+  for (const h of HAND_SLABS) {
+    const a = h.tiltZ ? s * h.tiltZ : 0;
+    const ca = Math.cos(a), sa = Math.sin(a);
+    for (const p of slabPoints(h.w, h.h, h.d, h.r, h.segs)) {
+      pts.push([ca * p[0] - sa * p[1] + s * (ARM_OFFSET + h.x),
+                sa * p[0] + ca * p[1] + h.y,
+                p[2] + h.z]);
+    }
   }
-  return last;
+  return pts;
 }
 
 /* ------------------------------------------------------------- skinning -- */
@@ -298,46 +321,41 @@ const PHASES = 64;
 /** One limb surface, and the body surface it must not cut through. */
 function surfaces(side) {
   const s = side === 'L' ? -1 : 1;
-  const sleeve = (stops) =>
-    loftPoints(taper(stops, 0.03), 18, false, true, s * X.shoulder);
 
   return [
     {
       name: 'bare arm',
-      pts: loftPoints(taper(ARM_STOPS, 0.05), 18, true, true, s * X.shoulder),
-      chain: CHAINS['arm' + side], band: 0.085, body: TORSO, ref: B.chest
+      pts: loftPoints(STACKS.arm, 18, true, true, s * ARM_OFFSET),
+      chain: CHAINS['arm' + side], band: BAND.arm, body: STACKS.torso, ref: B.chest
     },
     {
       // the hand is bound rigidly to the wrist, so wherever it was authored
       // is where it stays relative to the arm
       name: 'hand',
-      pts: slabPoints(0.070, 0.062, 0.031, 0.014)
-        .map((p) => [p[0], p[1] + Y.wrist - 0.034, p[2]]),
-      bone: B['wrist' + side], body: TORSO, ref: B.hips
+      pts: handPoints(s),
+      bone: B['wrist' + side], body: STACKS.torso, ref: B.hips
     },
     {
       name: 'short sleeve',
-      pts: sleeve([{ y: Y.shoulder + 0.034, r: 0.065 }, { y: Y.shoulder - 0.150, r: 0.057 }]),
-      chain: CHAINS['arm' + side], band: 0.085, body: inflate(TORSO, 0.021, 0.82, 1.46), ref: B.chest
+      pts: loftPoints(STACKS.shortSleeve, 18, false, true, s * X.shoulder),
+      chain: CHAINS['arm' + side], band: BAND.arm, body: STACKS.shirt, ref: B.chest
     },
     {
       name: 'long sleeve',
-      pts: sleeve([{ y: Y.shoulder + 0.034, r: 0.065 }, { y: Y.elbow, r: 0.049 },
-                   { y: Y.wrist + 0.028, r: 0.041 }]),
-      chain: CHAINS['arm' + side], band: 0.085, body: inflate(TORSO, 0.021, 0.82, 1.46), ref: B.chest
+      pts: loftPoints(STACKS.longSleeve, 18, false, true, s * X.shoulder),
+      chain: CHAINS['arm' + side], band: BAND.arm, body: STACKS.shirt, ref: B.chest
     },
     {
       name: 'bare leg',
-      pts: loftPoints(taper(LEG_STOPS, 0.055), 20, true, false, s * X.leg),
-      chain: CHAINS['leg' + side], band: 0.10, body: TORSO, ref: B.hips
+      pts: loftPoints(STACKS.leg, 20, true, false, s * X.leg),
+      chain: CHAINS['leg' + side], band: BAND.leg, body: STACKS.torso, ref: B.hips
     },
     {
       // the wide cut, which is the roomier of the two and so the one that has
       // the most of itself inside the seat of the trousers
       name: 'trouser leg',
-      pts: loftPoints(taper([{ y: Y.hips + 0.03, r: 0.098 }, { y: Y.knee, r: 0.086 },
-                             { y: Y.ankle + 0.035, r: 0.085 }], 0.02), 22, false, true, s * X.leg),
-      chain: CHAINS['leg' + side], band: 0.10, body: inflate(TORSO, 0.013, 0.82, 1.02), ref: B.hips
+      pts: loftPoints(STACKS.trouser, 22, false, true, s * X.leg),
+      chain: CHAINS['leg' + side], band: BAND.leg, body: STACKS.seat, ref: B.hips
     }
   ];
 }

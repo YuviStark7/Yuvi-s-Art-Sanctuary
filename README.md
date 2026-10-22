@@ -337,6 +337,7 @@ js/
   models.js         loading imported .glb files, and keeping them cached
   gallery.js        where the work hangs, how it is lit and labelled
   wardrobe.js       ← brand placements go here
+  figure.js         the figure's dimensions, shared with tools/probe-figure
   character.js      the figure, its clothes and how it moves
   coin.js           coins in flight, and the pile on the basin floor
   wishes.js         payment and the wish book
