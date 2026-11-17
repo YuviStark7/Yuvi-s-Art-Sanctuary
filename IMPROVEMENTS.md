@@ -17,20 +17,7 @@ straight to the published site, so read the Done notes.
 
 ## Queue
 
-### 1. Softer shadow edges
-Shadows are currently a single hard-ish map. A PCSS-style or wider PCF filter
-would suit overcast light much better — contact-sharp near the floor, soft
-further away.
-
-The shadow map is frozen (`renderer.shadowMap.autoUpdate = false`) because
-nothing in the building moves, so extra filtering cost is paid once, not every
-frame. Keep that property.
-
-*How to judge it:* the shadow the dome casts on the floor through the skylights
-should have a soft edge, and the tree's shadow on the island should stay crisp
-where trunk meets rock.
-
-### 2. A loading screen worth the wait
+### 1. A loading screen worth the wait
 The blossom tree is 4.3 MB and downloads behind the existing progress gate.
 Right now "planting the tree" is a bare progress step. Make the wait feel
 intentional rather than broken on a slow connection.
@@ -45,21 +32,17 @@ as deliberate, never as a hang.
 Both of these add per-frame GPU cost, and the site is currently being made
 lighter. They come back once frame time has headroom again.
 
-### Finer concrete up close
-The concrete is procedural and convincing at a distance, but soft when you walk
-up to a wall. Add a detail normal layered at a much higher frequency on top of
-the existing triplanar projection, fading in as the camera gets close.
-
-Do not simply raise the texture resolution — it is generated at load, so a
-larger canvas costs start-up time on every visit.
-
-*How to judge it:* walk right up to a wall between two artworks. It should
-retain fine tooth rather than going smooth.
+### A detail normal on the wall, up close
+The wall is a photograph of plaster now (see Done), which has real grain at a
+walk-up distance, but it carries no normal map: the shell's triplanar shader
+reads a colour map and a roughness map only, and a triplanar normal costs three
+more reads on the 4 ms surface. If walking up to a wall still looks flat, add
+one, high preset only, fading in with distance.
 
 ### Real reflection and refraction in the pool
 The water currently uses an analytic reflection — a pale dome with the oculus
-punched into it — rather than a true reflection pass. Upgrade it, and add
-caustics on the pool basin.
+punched into it — rather than a true reflection pass. Upgrade it. (The caustics
+on the basin are done; see Done.)
 
 This is the most expensive item here. It must be **high preset only** and must
 not regress the current 4.1 ms frame cost at medium.
@@ -72,6 +55,23 @@ and moving light should play across the basin floor.
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### The room's surfaces, light and planting
+The wall, floor and rock are Poly Haven photographs (CC0), fetched and graded by
+`tools/room/fetch.mjs` into `textures/*.webp` — nothing is downloaded at runtime,
+and a missing file falls back to the old generated surface. The wall's broad
+blotches are filtered out at build time so the 1 m tile does not band across the
+dome, and the shader adds a slow world-space mottle instead. The sun's pools of
+light are dappled by a tiling leaf cookie (`makeSunDapple`, one texture read, floor
+only) and have soft edges (`sun.shadow.radius`; PCF takes five taps whatever the
+radius). The environment probe no longer sees the pink canopy, which was tinting the
+whole hall mauve. The island carries the rock photograph, 26 instanced ferns
+(`models/fern.glb`, built by `tools/room/fern.mjs`) planted by raycast, and the water
+is clear enough to show the basin, whose bed carries animated caustics
+(`makeCaustics`). The fill light and exposure came down a little so the new surfaces
+keep their contrast. Measured cost is in the README under *Staying smooth*. This
+also closes the old "Softer shadow edges" item, with one regression: the contact
+shadow where the trunk meets the rock is no longer crisp.
 
 ### The figures, replaced
 The procedural figure — an egg with a decal face, a bowl for hair, a tube for a
@@ -152,9 +152,9 @@ room with room to spare even from inside a chamber. (PR #1)
 ## Rules the routine follows
 
 - One item per run. Never more.
-- Branch `improve/<slug>`, then **merge it into `main` itself**. No pull
-  request, no review, no waiting. The branch is still how the work is built, so
-  a bad run stays one `git revert` away.
+- Branch `improve/<slug>`, then **open a pull request**. Never merge it, never
+  push to `main`: the owner reviews and merges. The branch keeps a bad run one
+  `git revert` away.
 - No build step, no npm dependencies, no CDN links. three.js stays vendored.
 - Respect the three quality presets. Anything expensive is off or reduced at low.
 - Never touch the brand placeholders in `js/wardrobe.js`, the keys in

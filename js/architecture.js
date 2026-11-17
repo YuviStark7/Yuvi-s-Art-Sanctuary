@@ -11,7 +11,7 @@
  */
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
-import { HALL, OCULUS, SKYLIGHTS, ALCOVES, POOL, BENCHES, PALETTE, OCCLUSION } from './config.js';
+import { HALL, OCULUS, SKYLIGHTS, ALCOVES, POOL, BENCHES, PALETTE, OCCLUSION, SUN } from './config.js';
 
 const TAU = Math.PI * 2;
 
@@ -426,7 +426,7 @@ function loftOutline(outline, origin, forward, right, up, depth) {
  * parameterisation entirely — and it gives the swept seating, which carries no
  * UVs at all, a real surface for free.
  */
-export function makeTriplanar(material, scale) {
+export function makeTriplanar(material, scale, mottle = 0) {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTriScale = { value: scale };
 
@@ -449,6 +449,22 @@ export function makeTriplanar(material, scale) {
         varying vec3 vTriPos;
         varying vec3 vTriNrm;
 
+        ${mottle > 0 ? `
+        // Slow, broad variation in the surface that a repeating photograph cannot supply: it
+        // is made from the world position, so it never tiles and costs no texture reads.
+        float triHash( vec3 p ) {
+          p = fract( p * 0.3183099 + 0.1 ); p *= 17.0;
+          return fract( p.x * p.y * p.z * ( p.x + p.y + p.z ) );
+        }
+        float triNoise( vec3 x ) {
+          vec3 i = floor( x ), f = fract( x );
+          f = f * f * ( 3.0 - 2.0 * f );
+          return mix(
+            mix( mix( triHash( i ), triHash( i + vec3( 1, 0, 0 ) ), f.x ), mix( triHash( i + vec3( 0, 1, 0 ) ), triHash( i + vec3( 1, 1, 0 ) ), f.x ), f.y ),
+            mix( mix( triHash( i + vec3( 0, 0, 1 ) ), triHash( i + vec3( 1, 0, 1 ) ), f.x ), mix( triHash( i + vec3( 0, 1, 1 ) ), triHash( i + vec3( 1, 1, 1 ) ), f.x ), f.y ),
+            f.z );
+        }` : ''}
+
         vec3 triWeights() {
           vec3 w = pow( abs( normalize( vTriNrm ) ), vec3( 4.0 ) );
           return w / max( 1e-4, w.x + w.y + w.z );
@@ -461,6 +477,9 @@ export function makeTriplanar(material, scale) {
           diffuseColor *= texture2D( map, tpD.zy ) * twD.x
                         + texture2D( map, tpD.xz ) * twD.y
                         + texture2D( map, tpD.xy ) * twD.z;
+          ${mottle > 0 ? `
+          float triM = 0.62 * triNoise( vTriPos * 0.19 ) + 0.38 * triNoise( vTriPos * 0.61 + 7.3 );
+          diffuseColor.rgb *= 1.0 + ${mottle.toFixed(3)} * ( triM - 0.5 ) * 2.0;` : ''}
         #endif
       `)
       .replace('#include <roughnessmap_fragment>', `
@@ -474,7 +493,7 @@ export function makeTriplanar(material, scale) {
         #endif
       `);
   };
-  material.customProgramCacheKey = () => 'triplanar' + scale;
+  material.customProgramCacheKey = () => 'triplanar' + scale + 'm' + mottle;
   return material;
 }
 
@@ -629,6 +648,81 @@ export function makeRoomOcclusion(material, reach, strength) {
   return material;
 }
 
+/* --------------------------------------------------------- dappled sun -- */
+
+/** Advanced by the frame loop; the cookie drifts a hair with it. */
+export const dappleTime = { value: 0 };
+
+/**
+ * Breaks the sun's pools of light up as if it were coming through a canopy.
+ *
+ * The sun's shadow map is frozen and carries only the building, so on its own every patch of
+ * light on the floor is a clean ellipse. Here the sun's colour is multiplied by a tiling leaf
+ * cookie looked up in the plane the sun looks along, which is what a canopy above the opening
+ * would do. `gain` lifts the sun on this surface, since the hall's overcast fill is bright enough
+ * to flatten the patches. It is one texture read and a handful of arithmetic ops, only on the surfaces
+ * that carry the patches, and only for the sun (light 0 of the directional lights).
+ */
+export function makeSunDapple(material, cookie, { size = 9, strength = 0.8, gain = 1.0 } = {}) {
+  const L = new THREE.Vector3(...SUN.position).sub(new THREE.Vector3(...SUN.target)).normalize();
+  const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), L).normalize();
+  const up = new THREE.Vector3().crossVectors(L, right).normalize();
+
+  const chained = material.onBeforeCompile;
+  const chainedKey = material.customProgramCacheKey;
+  material.onBeforeCompile = function (shader, renderer) {
+    chained.call(this, shader, renderer);
+    shader.uniforms.tDapple = { value: cookie };
+    shader.uniforms.uDappleRight = { value: right.clone().divideScalar(size) };
+    shader.uniforms.uDappleUp = { value: up.clone().divideScalar(size) };
+    shader.uniforms.uDappleStrength = { value: strength };
+    shader.uniforms.uDappleGain = { value: gain };
+    shader.uniforms.uDappleTime = dappleTime;
+
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `
+        #include <common>
+        varying vec3 vDapPos;
+      `)
+      .replace('#include <begin_vertex>', `
+        #include <begin_vertex>
+        vDapPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+      `);
+
+    const lights = THREE.ShaderChunk.lights_fragment_begin.replace(
+      'getDirectionalLightInfo( directionalLight, directLight );',
+      `getDirectionalLightInfo( directionalLight, directLight );
+        #if ( UNROLLED_LOOP_INDEX == 0 )
+          directLight.color *= dappleFactor( vDapPos );
+        #endif`
+    );
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `
+        #include <common>
+        uniform sampler2D tDapple;
+        uniform vec3 uDappleRight;
+        uniform vec3 uDappleUp;
+        uniform float uDappleStrength;
+        uniform float uDappleGain;
+        uniform float uDappleTime;
+        varying vec3 vDapPos;
+
+        float dappleFactor( vec3 p ) {
+          vec2 uv = vec2( dot( p, uDappleRight ), dot( p, uDappleUp ) );
+          uv += 0.004 * vec2( sin( uDappleTime * 0.45 + uv.y * 6.0 ), cos( uDappleTime * 0.36 + uv.x * 5.0 ) );
+          float g = texture2D( tDapple, uv ).r;
+          // normalised so the open parts of the cookie are as bright as the sun was without it
+          return uDappleGain * mix( 1.0, min( 1.0, pow( g, 1.7 ) * 1.32 ), uDappleStrength );
+        }
+      `)
+      .replace('#include <lights_fragment_begin>', lights);
+  };
+  material.customProgramCacheKey = function () {
+    return chainedKey.call(this) + '|dapple' + size + ',' + strength + ',' + gain;
+  };
+  return material;
+}
+
 /* ------------------------------------------------------ reflective floor -- */
 
 const FresnelReflectorShader = {
@@ -693,6 +787,11 @@ export function buildSanctuary(textures, quality) {
   for (const a of ALCOVES) openings.push(archOpening(a, profile));
 
   /* ---- materials ---- */
+  // The wall photograph covers one metre; the generated surface it replaced covered a few and
+  // was tuned to read at that size. Shown at 0.6 of the old period the plaster grain comes out
+  // at a believable size and the repeat stays hard to find.
+  const mottleAmount = textures.concrete.photo && quality.roomAO ? 0.16 : 0;
+  const tile = (period) => period * (textures.concrete.photo ? 0.6 : 1);
   const concrete = makeTriplanar(new THREE.MeshStandardMaterial({
     color: PALETTE.concrete,
     map: textures.concrete.map,
@@ -700,7 +799,7 @@ export function buildSanctuary(textures, quality) {
     roughness: 0.94,
     metalness: 0.0,
     side: THREE.FrontSide
-  }), 3.4);
+  }), tile(3.4), mottleAmount);
 
   const interiorMat = makeTriplanar(new THREE.MeshStandardMaterial({
     color: 0x8e8a83,
@@ -709,7 +808,7 @@ export function buildSanctuary(textures, quality) {
     roughness: 0.94,
     metalness: 0.0,
     side: THREE.DoubleSide
-  }), 3.4);
+  }), tile(3.4), mottleAmount);
 
   const revealMat = makeTriplanar(new THREE.MeshStandardMaterial({
     color: PALETTE.concreteDeep,
@@ -718,7 +817,7 @@ export function buildSanctuary(textures, quality) {
     roughness: 0.95,
     metalness: 0.0,
     side: THREE.DoubleSide
-  }), 2.2);
+  }), tile(2.2), mottleAmount);
 
   /* ---- shell ---- */
   const shell = new THREE.Mesh(buildShellMesh(profile, openings, rings, segs), concrete);
@@ -773,17 +872,20 @@ export function buildSanctuary(textures, quality) {
   group.add(oculusSky);
 
   /* ---- floor ---- */
+  const floorPhoto = !!textures.floor.photo;
   const floorMat = new THREE.MeshStandardMaterial({
-    color: PALETTE.floor,
+    color: floorPhoto ? 0xf8f0e6 : PALETTE.floor,   // the photo is graded to its own average; the old surface leaned on the palette
     map: textures.floor.map,
     roughnessMap: textures.floor.roughnessMap,
     normalMap: textures.floor.normalMap,
-    normalScale: new THREE.Vector2(0.22, 0.22),
+    normalScale: floorPhoto ? new THREE.Vector2(0.7, 0.7) : new THREE.Vector2(0.22, 0.22),
     roughness: 0.34,
     metalness: 0.05
   });
   for (const t of [textures.floor.map, textures.floor.roughnessMap, textures.floor.normalMap]) {
-    t.repeat.set(9, 9);
+    // the photo is a 3 m square and the ring's UVs span 30.8 m
+    const r = floorPhoto ? 10.3 : 9;
+    t.repeat.set(r, r);
     t.needsUpdate = true;
   }
 
@@ -825,7 +927,7 @@ export function buildSanctuary(textures, quality) {
     roughnessMap: textures.concrete.roughnessMap,
     roughness: 0.88,
     metalness: 0.0
-  }), 1.7);
+  }), tile(1.7));
   const benchBands = [];
   for (const band of BENCHES) {
     const h = band.height, d = band.depth / 2, ch = 0.045;
@@ -906,6 +1008,13 @@ export function buildSanctuary(textures, quality) {
     for (const m of [concrete, interiorMat, revealMat, floorMat, benchMat]) {
       makeRoomOcclusion(m, OCCLUSION.reach, OCCLUSION.strength);
     }
+  }
+
+  /* ---- dappled light on the floor ----
+   * Applied after the occlusion, which wraps the same shader chunk: this one has to be the
+   * outermost, so it patches the text the occlusion left behind rather than the other way round. */
+  if (quality.dapple && textures.sunCookie) {
+    makeSunDapple(floorMat, textures.sunCookie, { size: 9, strength: 0.85, gain: 1.9 });
   }
 
   return {

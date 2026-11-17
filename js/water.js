@@ -39,6 +39,73 @@ const GLSL_NOISE = /* glsl */`
   }
 `;
 
+/* ------------------------------------------------------------ caustics -- */
+
+/** Advanced by the frame loop. */
+export const causticTime = { value: 0 };
+
+/**
+ * The bright, shifting net of light on the bed of a clear pool.
+ *
+ * Added as emission to the part of the basin that is under the water, so it is exactly where a
+ * visitor looking through the surface would expect it, and nowhere else. It is computed from
+ * position and time: no texture, no extra pass. The pattern is the wrapped-sine iteration that
+ * has been the standard cheap caustic for years; four turns of it is enough at this distance.
+ */
+export function makeCaustics(material, level, strength) {
+  const chained = material.onBeforeCompile;
+  const chainedKey = material.customProgramCacheKey;
+  material.onBeforeCompile = function (shader, renderer) {
+    chained.call(this, shader, renderer);
+    shader.uniforms.uCauTime = causticTime;
+    shader.uniforms.uCauLevel = { value: level };
+    shader.uniforms.uCauStrength = { value: strength };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `
+        #include <common>
+        varying vec3 vCauPos;
+      `)
+      .replace('#include <begin_vertex>', `
+        #include <begin_vertex>
+        vCauPos = ( modelMatrix * vec4( transformed, 1.0 ) ).xyz;
+      `);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `
+        #include <common>
+        uniform float uCauTime, uCauLevel, uCauStrength;
+        varying vec3 vCauPos;
+
+        float caustic( vec2 uv, float t ) {
+          vec2 p = mod( uv * 6.28318530718, 6.28318530718 ) - 250.0;
+          vec2 i = p;
+          float c = 1.0;
+          for ( int n = 0; n < 4; n++ ) {
+            float tt = t * ( 1.0 - 3.5 / float( n + 1 ) );
+            i = p + vec2( cos( tt - i.x ) + sin( tt + i.y ), sin( tt - i.y ) + cos( tt + i.x ) );
+            c += 1.0 / length( vec2( p.x / ( sin( i.x + tt ) / 0.005 ), p.y / ( cos( i.y + tt ) / 0.005 ) ) );
+          }
+          c /= 4.0;
+          c = 1.17 - pow( c, 1.4 );
+          return pow( abs( c ), 8.0 );
+        }
+      `)
+      .replace('#include <emissivemap_fragment>', `
+        #include <emissivemap_fragment>
+        if ( vCauPos.y < uCauLevel ) {
+          // fade toward the walls of the basin and with depth below the surface
+          float below = clamp( ( uCauLevel - vCauPos.y ) * 4.0, 0.0, 1.0 );
+          float c = caustic( vCauPos.xz * 0.30, uCauTime * 0.5 ) * 0.7
+                  + caustic( vCauPos.xz * 0.47 + 3.1, uCauTime * 0.36 ) * 0.5;
+          totalEmissiveRadiance += vec3( 0.85, 0.95, 1.0 ) * c * uCauStrength * ( 1.0 - 0.45 * below );
+        }
+      `);
+  };
+  material.customProgramCacheKey = function () {
+    return chainedKey.call(this) + '|caustics' + level + ',' + strength;
+  };
+  return material;
+}
+
 /* ---------------------------------------------------------- pool basin -- */
 
 export function buildPool(textures, quality) {
@@ -52,11 +119,12 @@ export function buildPool(textures, quality) {
     roughness: 0.72,
     metalness: 0.0,
     side: THREE.DoubleSide
-  }), 2.6);
+  }), textures.concrete.photo ? 1.6 : 2.6);
 
   // the basin is the deepest crease a visitor can look into, so it wants the
   // same corner shading as the hall
   if (quality.roomAO) makeRoomOcclusion(basinMat, OCCLUSION.reach, OCCLUSION.strength);
+  if (quality.caustics) makeCaustics(basinMat, POOL.waterLevel, 0.55);
 
   // rim, inner wall and floor of the basin in one revolved profile
   const d = POOL.depth;
@@ -90,6 +158,8 @@ export function buildWaterSurface(textures, oculusRimY) {
     uCurtainR: { value: CURTAIN.radius },
     uLevel: { value: POOL.waterLevel },
     uAgitation: { value: 1.0 },
+    // how much of the surface is the water's own colour rather than a view through to the basin
+    uClarity: { value: 0.52 },
     // where the last coin went in, and how long ago (negative = none)
     uSplashPos: { value: new THREE.Vector2(0, 0) },
     uSplashAge: { value: -1.0 }
@@ -112,7 +182,7 @@ export function buildWaterSurface(textures, oculusRimY) {
       uniform float uTime;
       uniform sampler2D uRipple;
       uniform vec3 uDeep, uTint, uWall, uSky;
-      uniform float uOculusY, uOculusR, uCurtainR, uLevel, uAgitation;
+      uniform float uOculusY, uOculusR, uCurtainR, uLevel, uAgitation, uClarity;
       uniform vec2 uSplashPos;
       uniform float uSplashAge;
       varying vec3 vWorld;
@@ -197,7 +267,7 @@ export function buildWaterSurface(textures, oculusRimY) {
         /* a last glint on the very tips of the ripples */
         col += vec3( 1.0 ) * pow( max( 0.0, nrm.y - 0.988 ), 0.6 ) * 0.32;
 
-        float alpha = clamp( 0.86 + fres * 0.14 + foam * 0.3, 0.0, 1.0 );
+        float alpha = clamp( uClarity + fres * 0.5 + foam * 0.3, 0.0, 1.0 );
         gl_FragColor = vec4( col, alpha );
         #include <tonemapping_fragment>
         #include <colorspace_fragment>

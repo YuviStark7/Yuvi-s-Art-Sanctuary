@@ -164,3 +164,9 @@ export const PALETTE = {
   bark:        0x6a6157,
   rock:        0x979186
 };
+
+/** The one sun. Lights, the shadow camera and the dappled-light cookie all read it. */
+export const SUN = {
+  position: [5.4, 30, -8.2],
+  target: [-1.2, 0, 1.6]
+};

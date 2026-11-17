@@ -7,10 +7,10 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-import { HALL, OCULUS, POOL, CURTAIN, PLAYER, RENDER, PALETTE, CAMERA, WISHING, TREE } from './config.js';
+import { HALL, OCULUS, POOL, CURTAIN, PLAYER, RENDER, PALETTE, CAMERA, WISHING, TREE, SUN } from './config.js';
 import * as TEX from './textures.js';
-import { buildSanctuary } from './architecture.js';
-import { buildPool, buildWaterSurface, buildCurtain, buildMist, buildLightShaft } from './water.js';
+import { buildSanctuary, dappleTime } from './architecture.js';
+import { buildPool, buildWaterSurface, buildCurtain, buildMist, buildLightShaft, causticTime } from './water.js';
 import { buildIsland, buildTree, buildImportedTree } from './nature.js';
 import { loadModel, modelTextures } from './models.js';
 import { buildGallery, loadArtworkTextures } from './gallery.js';
@@ -35,7 +35,7 @@ const QUALITY = {
     bloom: true, bloomStrength: 0.34,
     shadowMap: 4096, chamberShadows: true, roomAO: true,
     mist: 1100, msaa: 4, maxPixelRatio: 2,
-    artworkGlow: 0.05, shafts: 4, canopyLayers: 2, canopyTranslucency: true
+    artworkGlow: 0.05, shafts: 4, canopyLayers: 2, canopyTranslucency: true, dapple: true, caustics: true
   },
   medium: {
     shellRings: 118, shellSegments: 280,
@@ -43,7 +43,7 @@ const QUALITY = {
     bloom: true, bloomStrength: 0.30,
     shadowMap: 2048, chamberShadows: false, roomAO: true,
     mist: 650, msaa: 0, maxPixelRatio: 1.5,
-    artworkGlow: 0.07, shafts: 3, canopyLayers: 2, canopyTranslucency: true
+    artworkGlow: 0.07, shafts: 3, canopyLayers: 2, canopyTranslucency: true, dapple: true, caustics: true
   },
   low: {
     shellRings: 86, shellSegments: 208,
@@ -51,7 +51,7 @@ const QUALITY = {
     bloom: false, bloomStrength: 0,
     shadowMap: 1024, chamberShadows: false, roomAO: false,
     mist: 260, msaa: 0, maxPixelRatio: 1,
-    artworkGlow: 0.12, shafts: 2, canopyLayers: 1, canopyTranslucency: false
+    artworkGlow: 0.12, shafts: 2, canopyLayers: 1, canopyTranslucency: false, dapple: false, caustics: false
   }
 };
 
@@ -62,6 +62,7 @@ const app = {
   mode: 'gate',                      // gate → wardrobe → visit
   scale: 1,                          // the governor's resolution multiplier
   treeModel: null,                   // models/blossom-tree.glb, once fetched
+  fernModel: null,                   // models/fern.glb, once fetched
   outfit: Object.assign({}, DEFAULT_OUTFIT),
   textures: null,
   artworkTextures: null,
@@ -82,7 +83,7 @@ const renderer = new THREE.WebGLRenderer({
 });
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.14;
+renderer.toneMappingExposure = 1.1;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 // the building and the sun never move, so the shadow map is drawn once
@@ -156,24 +157,55 @@ const nextFrame = () => new Promise((resolve) => {
   setTimeout(finish, 60);
 });
 
+/**
+ * The plaster and the floor are photographs (Poly Haven, CC0 — see README), vendored under
+ * textures/. If one will not load the room is built from the generated surfaces instead, so
+ * a missing file costs some realism rather than the whole page. `photo` tells the materials
+ * which they got, since the two are tuned to different averages.
+ */
+function loadPhotoSet(files) {
+  const loader = new THREE.TextureLoader();
+  const load = (name, srgb) => new Promise((resolve, reject) => {
+    loader.load('./textures/' + name + '.webp', (t) => {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+      t.anisotropy = 8;
+      resolve(t);
+    }, undefined, () => reject(new Error('textures/' + name + '.webp')));
+  });
+  return Promise.all(Object.entries(files).map(([slot, [name, srgb]]) => load(name, srgb).then((t) => [slot, t])))
+    .then((pairs) => ({ ...Object.fromEntries(pairs), photo: true }));
+}
+
 async function makeTextures(ui) {
+  const photo = (files, fallback, what) => async () => {
+    try { return await loadPhotoSet(files); }
+    catch (e) { console.warn('[Stark Museo] ' + what + ' photo missing (' + e.message + '); using the generated surface'); return fallback(); }
+  };
   const steps = [
-    ['pouring the concrete', () => ({ concrete: TEX.concreteSurface({ size: 1024, seed: 7 }) })],
-    ['polishing the floor', () => ({ floor: TEX.polishedFloor({ size: 1024, seed: 21 }) })],
-    ['quarrying the stone', () => ({ rock: TEX.rockSurface({ size: 512, seed: 44 }) })],
+    ['pouring the concrete', async () => ({ concrete: await photo(
+      { map: ['wall-diffuse', true], roughnessMap: ['wall-rough', false] },
+      () => TEX.concreteSurface({ size: 1024, seed: 7 }), 'wall')() })],
+    ['polishing the floor', async () => ({ floor: await photo(
+      { map: ['floor-diffuse', true], roughnessMap: ['floor-rough', false], normalMap: ['floor-normal', false] },
+      () => TEX.polishedFloor({ size: 1024, seed: 21 }), 'floor')() })],
+    ['quarrying the stone', async () => ({ rock: await photo(
+      { map: ['rock-diffuse', true], normalMap: ['rock-normal', false] },
+      () => TEX.rockSurface({ size: 512, seed: 44 }), 'rock')() })],
     ['stilling the water', () => ({ waterNormal: TEX.waterNormal({ size: 512, seed: 91 }) })],
     ['growing the leaves', () => ({ leaf: TEX.leafCluster({ size: 256, seed: 3 }), moss: TEX.mossTexture({ size: 256, seed: 12 }) })],
     ['opening the sky', () => ({
       sky: TEX.skyDisc({ size: 512, seed: 5, foliage: true }),
       skyBright: TEX.skyDisc({ size: 512, seed: 9, foliage: false }),
-      dot: TEX.softDot({ size: 128 })
+      dot: TEX.softDot({ size: 128 }),
+      sunCookie: TEX.sunCookie({ size: 256, seed: 61 })
     })]
   ];
   const out = {};
   for (let i = 0; i < steps.length; i++) {
     ui.progress(0.05 + (i / steps.length) * 0.50, steps[i][0]);
     await nextFrame();
-    Object.assign(out, steps[i][1]());
+    Object.assign(out, await steps[i][1]());
   }
   return out;
 }
@@ -209,6 +241,7 @@ function sharedTextures() {
   }
   for (const a of app.artworkTextures || []) add(a && a.tex);
   if (app.treeModel) modelTextures(app.treeModel.scene, keep);
+  if (app.fernModel) modelTextures(app.fernModel.scene, keep);
   return keep;
 }
 
@@ -284,7 +317,7 @@ function buildWorld(quality) {
   root.add(mist.points);
   animated.push(mist.uniforms);
 
-  const island = buildIsland(app.textures, 88);
+  const island = buildIsland(app.textures, 88, app.fernModel);
   root.add(island.group);
 
   const tree = app.treeModel
@@ -293,17 +326,19 @@ function buildWorld(quality) {
   tree.group.position.y = 0.50;
   root.add(tree.group);
   animated.push(windUniforms);
+  animated.push({ uTime: dappleTime }, { uTime: causticTime });
 
-  /* light — an overcast afternoon, not a hard sun. */
-  const hemi = new THREE.HemisphereLight(PALETTE.sky, PALETTE.ground, 3.05);
+  /* light — an overcast afternoon, not a hard sun. The fill is lower than it was: with the photographic
+   * surfaces in, a bright fill flattened them, and the pools of sun read as a stain rather than light. */
+  const hemi = new THREE.HemisphereLight(PALETTE.sky, PALETTE.ground, 2.45);
   root.add(hemi);
 
   const ambient = new THREE.AmbientLight(0xa9b0b2, 0.26);
   root.add(ambient);
 
   const sun = new THREE.DirectionalLight(0xfff6e8, 2.6);
-  sun.position.set(5.4, 30, -8.2);
-  sun.target.position.set(-1.2, 0, 1.6);
+  sun.position.set(...SUN.position);
+  sun.target.position.set(...SUN.target);
   sun.castShadow = true;
   sun.shadow.mapSize.set(quality.shadowMap, quality.shadowMap);
   sun.shadow.camera.left = -17;
@@ -314,6 +349,9 @@ function buildWorld(quality) {
   sun.shadow.camera.far = 62;
   sun.shadow.bias = -0.0006;
   sun.shadow.normalBias = 0.045;
+  // PCF takes five taps whatever the radius, so widening it is free; what it buys is the soft edge a
+  // pool of light has when it has fallen 25 m through an opening
+  sun.shadow.radius = 22;
   root.add(sun, sun.target);
 
   const fill = new THREE.DirectionalLight(0xdce8f2, 0.42);
@@ -362,13 +400,18 @@ function captureEnvironment(quality) {
   if (reflector) { reflector.visible = false; hidden.push(reflector); }
   // the figure would otherwise be baked into every reflective surface
   if (character) { character.root.visible = false; hidden.push(character.root); }
+  // The canopy is a pink mass in the middle of the probe's view, and a probe has no idea how far
+  // away it is: left in, it tints every surface in the hall pink as if the tree stood against it.
+  // The floor still reflects the tree where it should — that comes from the planar reflection.
+  const canopy = app.world && app.world.tree && app.world.tree.group;
+  if (canopy) { canopy.visible = false; hidden.push(canopy); }
 
   renderer.shadowMap.needsUpdate = true;
   cubeCam.update(renderer, scene);
   for (const o of hidden) o.visible = true;
   scene.remove(cubeCam);
 
-  scene.environmentIntensity = 0.88;
+  scene.environmentIntensity = 0.74;
   const filter = () => {
     const g = new THREE.PMREMGenerator(renderer);
     g.compileCubemapShader();
@@ -381,16 +424,17 @@ function captureEnvironment(quality) {
   scene.environment = first.texture;
 
   scene.add(cubeCam);
-  if (reflector) reflector.visible = false;
-  if (character) character.root.visible = false;
+  for (const o of hidden) o.visible = false;
   cubeCam.update(renderer, scene);
-  if (reflector) reflector.visible = true;
-  if (character) character.root.visible = true;
+  for (const o of hidden) o.visible = true;
   scene.remove(cubeCam);
 
   const second = filter();
   scene.environment = second.texture;
   if (app.world) app.world.envTarget = second;
+
+  // the probe rendered without the canopy, and the shadow map is frozen: draw it once more with it
+  renderer.shadowMap.needsUpdate = true;
 
   first.dispose();
   rt.dispose();
@@ -948,6 +992,10 @@ async function boot() {
       app.treeModel = null;
     }
   }
+
+  // the ferns on the island: nice to have, never worth failing the visit over
+  try { app.fernModel = await loadModel('./models/fern.glb'); }
+  catch (err) { console.warn('[Stark Museo] ferns unavailable, the island keeps its ground cover only:', err); app.fernModel = null; }
 
   character = await makeCharacter();
   character.onEvent = (name) => {
