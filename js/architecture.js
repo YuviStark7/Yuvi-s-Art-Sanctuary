@@ -416,6 +416,27 @@ function loftOutline(outline, origin, forward, right, up, depth) {
 /* ------------------------------------------------------------ triplanar -- */
 
 /**
+ * One reflection pass at a time.
+ *
+ * A `Reflector` re-renders the whole scene from a mirrored camera and hides only itself while it
+ * does. With two of them in the room, the floor's and the pool's, each one's pass would drive the
+ * other's and a frame would cost four scene renders instead of three. What that buys is a
+ * reflection inside a reflection, which nobody standing in the room can see, so a pass that
+ * starts while another is running is skipped and keeps the image it already has.
+ */
+let reflecting = false;
+
+export function guardReflector(reflector) {
+  const pass = reflector.onBeforeRender;
+  reflector.onBeforeRender = function (renderer, scene, camera) {
+    if (reflecting) return;
+    reflecting = true;
+    try { pass.call(this, renderer, scene, camera); } finally { reflecting = false; }
+  };
+  return reflector;
+}
+
+/**
  * Projects the concrete maps from world space on all three axes and blends by
  * the surface normal.
  *
@@ -916,6 +937,7 @@ export function buildSanctuary(textures, quality) {
     reflector.material.transparent = true;
     reflector.material.depthWrite = false;
     reflector.renderOrder = 1;
+    guardReflector(reflector);
     group.add(reflector);
   }
 
