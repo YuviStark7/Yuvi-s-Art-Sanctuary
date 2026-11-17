@@ -24,6 +24,7 @@ import { UI } from './ui.js';
 import { ARTWORKS, EXHIBITION } from './artworks.js';
 import { DEFAULT_OUTFIT, WARDROBE, figureById } from './wardrobe.js';
 import { PAYMENTS } from './payments.config.js';
+import { Governor } from './governor.js';
 
 /* ------------------------------------------------------------- quality -- */
 
@@ -59,6 +60,7 @@ const QUALITY = {
 const app = {
   qualityName: matchMedia('(pointer: coarse)').matches ? 'medium' : 'high',
   mode: 'gate',                      // gate → wardrobe → visit
+  scale: 1,                          // the governor's resolution multiplier
   treeModel: null,                   // models/blossom-tree.glb, once fetched
   outfit: Object.assign({}, DEFAULT_OUTFIT),
   textures: null,
@@ -119,12 +121,14 @@ function setupComposer(quality) {
   composer.addPass(renderPass);
   if (quality.bloom) {
     bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(size.w, size.h), quality.bloomStrength, 0.62, 1.00
+      new THREE.Vector2(size.w * 0.5, size.h * 0.5), quality.bloomStrength, 0.62, 1.00
     );
     composer.addPass(bloomPass);
   } else bloomPass = null;
   composer.addPass(new OutputPass());
   composer.setSize(size.w, size.h);
+  // composer.setSize hands every pass the full device resolution; bloom wants half
+  if (bloomPass) bloomPass.setSize(Math.round(size.w * 0.5), Math.round(size.h * 0.5));
 }
 
 function getSize() { return { w: window.innerWidth, h: window.innerHeight }; }
@@ -132,12 +136,15 @@ function getSize() { return { w: window.innerWidth, h: window.innerHeight }; }
 function applySize() {
   const { w, h } = getSize();
   const quality = QUALITY[app.qualityName];
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.maxPixelRatio));
+  const pr = Math.max(0.5, Math.min(window.devicePixelRatio || 1, quality.maxPixelRatio) * app.scale);
+  renderer.setPixelRatio(pr);
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  if (composer) composer.setSize(w, h);
-  if (bloomPass) bloomPass.setSize(w, h);
+  if (composer) { composer.setPixelRatio(pr); composer.setSize(w, h); }
+  // Bloom is a soft glow; it does not need the resolution the picture does. A
+  // quarter of the pixels costs a quarter of the blur chain and looks the same.
+  if (bloomPass) bloomPass.setSize(Math.round(w * 0.5), Math.round(h * 0.5));
 }
 
 /* ------------------------------------------------------------ textures -- */
@@ -665,6 +672,8 @@ async function changeQuality(name) {
   applySize();
   setupComposer(quality);
   buildWorld(quality);
+  throttleReflector();
+  if (governor) governor.reapply();
   ui.busy(false);
 }
 
@@ -778,6 +787,7 @@ function frame(now) {
   requestAnimationFrame(frame);
   if (!lastTime) lastTime = now || performance.now();
   const t = now || performance.now();
+  if (governor) governor.frame(t);
   step(Math.min(0.05, (t - lastTime) / 1000));
   lastTime = t;
   if (composer) composer.render(0);
@@ -799,6 +809,43 @@ async function makeCharacter() {
     c.setOutfit(app.outfit);
     return c;
   }
+}
+
+/* ------------------------------------------------------------- governor -- */
+
+let governor = null;
+const reflection = { every: 1 };           // 1: every frame, 2: every other frame
+
+/** Every other frame is enough for a floor reflection; it lags by one frame, which cannot be seen. */
+function throttleReflector() {
+  const r = app.world && app.world.reflector;
+  if (!r || r.userData.throttled) return;
+  const original = r.onBeforeRender;
+  let n = 0;
+  r.onBeforeRender = function (...args) {
+    if (reflection.every === 2 && (n++ & 1)) return;
+    return original.apply(this, args);
+  };
+  r.userData.throttled = true;
+}
+
+function startGovernor() {
+  governor = new Governor({
+    setScale(f) { if (app.scale !== f) { app.scale = f; applySize(); } },
+    setBloom(on) { if (bloomPass) bloomPass.enabled = on; },
+    setReflection(mode) {
+      reflection.every = mode || 1;
+      const r = app.world && app.world.reflector;
+      if (r) r.visible = mode !== 0;
+    },
+    setCanopy(layers) {
+      const t = app.world && app.world.tree;
+      const second = t && t.imported && t.group.getObjectByName('BlossomB');
+      if (second) second.visible = layers > 1;
+    }
+  }, { start: app.qualityName === 'high' ? 0 : 2 });
+  governor.reapply();
+  window.museoGovernor = governor;
 }
 
 /* ----------------------------------------------------------------- boot -- */
@@ -865,6 +912,14 @@ async function boot() {
   const quality = QUALITY[app.qualityName];
   setupComposer(quality);
   buildWorld(quality);
+
+  throttleReflector();
+  startGovernor();
+
+  // Compile every shader now, while the loading screen is up, so the first look
+  // into a side chamber is not a half-second hitch.
+  ui.progress(0.96, 'warming the light');
+  try { await renderer.compileAsync(scene, camera); } catch { /* an old browser: it will compile lazily */ }
 
   ui.progress(1, 'the room is ready');
   player.position.set(0, 0, 11.4);
