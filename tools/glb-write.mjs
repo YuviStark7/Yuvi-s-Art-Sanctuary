@@ -4,7 +4,7 @@ export class GLBBuilder {
     scene:0, scenes:[{nodes:[]}], nodes:[], meshes:[], materials:[], accessors:[], bufferViews:[], buffers:[] };
   }
   _pad(n) { return (4 - (n % 4)) % 4; }
-  view(typedArray, target) {
+  view(typedArray, target, byteStride) {
     const bytes = Buffer.from(typedArray.buffer, typedArray.byteOffset, typedArray.byteLength);
     const pad = this._pad(this.len);
     if (pad) { this.chunks.push(Buffer.alloc(pad)); this.len += pad; }
@@ -12,6 +12,7 @@ export class GLBBuilder {
     this.chunks.push(bytes); this.len += bytes.length;
     const bv = { buffer:0, byteOffset:off, byteLength:bytes.length };
     if (target) bv.target = target;
+    if (byteStride) bv.byteStride = byteStride;
     this.g.bufferViews.push(bv);
     return this.g.bufferViews.length - 1;
   }
@@ -19,8 +20,8 @@ export class GLBBuilder {
     const NUM = { SCALAR:1, VEC2:2, VEC3:3, VEC4:4, MAT4:16 };
     const n = NUM[type];
     if (!n) throw new Error('unknown accessor type ' + type);
-    const bv = this.view(typedArray, opts.target);
-    const count = typedArray.length / n;
+    const bv = this.view(typedArray, opts.target, opts.stride);
+    const count = opts.count !== undefined ? opts.count : typedArray.length / n;
     const a = { bufferView: bv, componentType: compType, count, type };
     if (opts.normalized) a.normalized = true;
     if (opts.minmax) {

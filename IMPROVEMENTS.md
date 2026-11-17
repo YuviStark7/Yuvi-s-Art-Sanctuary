@@ -15,25 +15,6 @@ straight to the published site, so read the Done notes.
 
 ---
 
-## Hold — read this first
-
-**The figure is being replaced, by hand, on the branch `figure/realistic-humans`.**
-The old procedural figure cannot be repaired into something that looks real, so
-a new male and female pair, built from CC0 MakeHuman parts, is going in. Until
-that merges, **do not touch**:
-
-- `js/character.js`, `js/figure.metrics.js`, `js/wardrobe.js`
-- the figure parts of `js/main.js` and `js/player.js`
-- `tools/probe-figure.mjs`, `tools/rig-figure.mjs`, `tools/human/`, `models/`
-
-Anything you change there will be thrown away, and a merge conflict with a
-rewrite is the most expensive kind. The performance work on `js/main.js`
-(quality presets, the frame loop) is also in progress, so keep any change there
-to a handful of lines.
-
-**The site is also being made lighter.** Nothing in the Queue may add GPU work
-per frame. That is why the two items under *Parked* are not in the Queue.
-
 ## Queue
 
 ### 1. Softer shadow edges
@@ -91,6 +72,28 @@ and moving light should play across the basin floor.
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### The figures, replaced
+The procedural figure — an egg with a decal face, a bowl for hair, a tube for a
+neck — could not be repaired into something that looks real, so it is replaced
+by a man and a woman built from CC0 MakeHuman parts (`tools/human/`): modelled
+head and hands, real hair, brows and lashes, and tailored formal wear (white
+dinner jacket, navy suit; double-breasted suit, skirt suit). `js/character.js`
+loads them; the old figure is `js/character.procedural.js` and takes over if
+the model cannot be fetched. **Do not edit the `.glb` files by hand**, and do not try to
+rebuild them: the source assets are git-ignored, so a cloud checkout cannot run
+`tools/human/build.mjs` at all. Changes to the figures are made on a machine that
+has fetched them (see `tools/human/README.md`).
+
+### Keep the frame rate smooth
+`js/governor.js` measures frame intervals and sheds cost in steps (resolution,
+bloom, canopy, floor reflection) when frames run long, and probes back up when
+there is room. Bloom runs at half resolution and every shader is compiled behind
+the loading screen. **Anything added to the render path should be cheap**: on a
+GTX 1650 at 1080p the frame is 11.7 ms at full quality, of which the concrete
+shell is 4.0, bloom 2.0, the floor reflection 1.9, the canopy 1.4 and the figure
+1.5. The two parked items below add cost and stay parked until the governor
+has been seen to hold.
 
 ### Make the figure probe read the figure, not a copy of it
 The figure's measurements moved into `js/figure.metrics.js`, which

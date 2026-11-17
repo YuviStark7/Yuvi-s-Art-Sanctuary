@@ -15,15 +15,16 @@ import { buildIsland, buildTree, buildImportedTree } from './nature.js';
 import { loadModel, modelTextures } from './models.js';
 import { buildGallery, loadArtworkTextures } from './gallery.js';
 import { Player } from './player.js';
-import { Character } from './character.js';
+import { Character, prepareFigureScene } from './character.js';
 import { CoinPool } from './coin.js';
 import { WishingWell } from './wishes.js';
 import { Tour, defaultStops } from './tour.js';
 import { Ambience } from './audio.js';
 import { UI } from './ui.js';
 import { ARTWORKS, EXHIBITION } from './artworks.js';
-import { DEFAULT_OUTFIT, WARDROBE } from './wardrobe.js';
+import { DEFAULT_OUTFIT, WARDROBE, FIGURES, figureById } from './wardrobe.js';
 import { PAYMENTS } from './payments.config.js';
+import { Governor } from './governor.js';
 
 /* ------------------------------------------------------------- quality -- */
 
@@ -59,6 +60,7 @@ const QUALITY = {
 const app = {
   qualityName: matchMedia('(pointer: coarse)').matches ? 'medium' : 'high',
   mode: 'gate',                      // gate → wardrobe → visit
+  scale: 1,                          // the governor's resolution multiplier
   treeModel: null,                   // models/blossom-tree.glb, once fetched
   outfit: Object.assign({}, DEFAULT_OUTFIT),
   textures: null,
@@ -119,12 +121,14 @@ function setupComposer(quality) {
   composer.addPass(renderPass);
   if (quality.bloom) {
     bloomPass = new UnrealBloomPass(
-      new THREE.Vector2(size.w, size.h), quality.bloomStrength, 0.62, 1.00
+      new THREE.Vector2(size.w * 0.5, size.h * 0.5), quality.bloomStrength, 0.62, 1.00
     );
     composer.addPass(bloomPass);
   } else bloomPass = null;
   composer.addPass(new OutputPass());
   composer.setSize(size.w, size.h);
+  // composer.setSize hands every pass the full device resolution; bloom wants half
+  if (bloomPass) bloomPass.setSize(Math.round(size.w * 0.5), Math.round(size.h * 0.5));
 }
 
 function getSize() { return { w: window.innerWidth, h: window.innerHeight }; }
@@ -132,12 +136,15 @@ function getSize() { return { w: window.innerWidth, h: window.innerHeight }; }
 function applySize() {
   const { w, h } = getSize();
   const quality = QUALITY[app.qualityName];
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.maxPixelRatio));
+  const pr = Math.max(0.5, Math.min(window.devicePixelRatio || 1, quality.maxPixelRatio) * app.scale);
+  renderer.setPixelRatio(pr);
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
-  if (composer) composer.setSize(w, h);
-  if (bloomPass) bloomPass.setSize(w, h);
+  if (composer) { composer.setPixelRatio(pr); composer.setSize(w, h); }
+  // Bloom is a soft glow; it does not need the resolution the picture does. A
+  // quarter of the pixels costs a quarter of the blur chain and looks the same.
+  if (bloomPass) bloomPass.setSize(Math.round(w * 0.5), Math.round(h * 0.5));
 }
 
 /* ------------------------------------------------------------ textures -- */
@@ -539,6 +546,7 @@ async function sendWish(text) {
 
 const ui = new UI({
   onGetReady: () => {
+    warmFigures();
     ambience.start();
     app.mode = 'wardrobe';
     app.running = true;
@@ -548,9 +556,15 @@ const ui = new UI({
   },
   onWardrobeChange: (cat, id) => {
     app.outfit[cat] = id;
+    if (cat === 'body') {
+      // the outfits on offer belong to the figure, so offer the new figure's
+      app.outfit.outfit = figureById(id).outfits[0].id;
+      ui.buildWardrobe(app.outfit);
+    }
     if (character) {
-      character.setOutfit(app.outfit);
-      attachSmoke();
+      const done = character.setOutfit(app.outfit);
+      // a 3D figure loads asynchronously the first time it is chosen
+      if (done && done.then) done.then(attachSmoke); else attachSmoke();
     }
   },
   onEnter: () => {
@@ -659,6 +673,8 @@ async function changeQuality(name) {
   applySize();
   setupComposer(quality);
   buildWorld(quality);
+  throttleReflector();
+  if (governor) governor.reset();          // an explicit choice is the new ceiling
   ui.busy(false);
 }
 
@@ -772,9 +788,128 @@ function frame(now) {
   requestAnimationFrame(frame);
   if (!lastTime) lastTime = now || performance.now();
   const t = now || performance.now();
+  if (governor) governor.frame(t);
   step(Math.min(0.05, (t - lastTime) / 1000));
   lastTime = t;
   if (composer) composer.render(0);
+}
+
+/**
+ * The visitor. The 3D figure is a few megabytes; if it cannot be fetched the
+ * sanctuary should still open, so the older procedural figure takes over.
+ */
+async function makeCharacter() {
+  try {
+    const c = new Character();
+    await c.setOutfit(app.outfit);
+    return c;
+  } catch (err) {
+    console.warn('3D figure unavailable, using the procedural one instead:', err);
+    const { Character: Procedural } = await import('./character.procedural.js');
+    const c = new Procedural(app.textures);
+    c.setOutfit(app.outfit);
+    return c;
+  }
+}
+
+/**
+ * Warm the figures while the visitor is choosing one.
+ *
+ * The first time a figure or outfit is drawn its textures are uploaded to the GPU,
+ * which measured 225-255 ms in one frame: a stall in the wardrobe at exactly the
+ * moment someone taps. So the moment they reach the wardrobe, fetch the figures
+ * they might pick and upload every texture, one a frame, in the background. Done
+ * only where memory is not tight, because the textures of outfits that are never
+ * picked are uploaded too.
+ */
+let warmed = false;
+async function warmFigures() {
+  if (warmed) return;
+  warmed = true;
+  const tight = matchMedia('(pointer: coarse)').matches || (navigator.deviceMemory && navigator.deviceMemory < 4);
+  if (tight) return;
+  const pause = () => new Promise((r) => setTimeout(r, 60));
+  try {
+    for (const def of FIGURES) {
+      const gltf = await loadModel(def.model);
+      prepareFigureScene(gltf.scene);
+      const seen = new Set();
+      gltf.scene.traverse((o) => {
+        if (!o.material) return;
+        for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+          for (const slot of ['map', 'normalMap', 'roughnessMap', 'metalnessMap']) if (m[slot]) seen.add(m[slot]);
+        }
+      });
+      for (const t of seen) { renderer.initTexture(t); await pause(); }
+
+      // The outfits that are not showing have shaders nobody has asked for yet (a suit
+      // without a normal map is a different program from one with), so compile every
+      // outfit with all of them visible, against the room's real lights.
+      const outfits = [];
+      gltf.scene.traverse((o) => { if (/^outfit_/.test(o.name) && !o.isMesh) outfits.push([o, o.visible]); });
+      for (const [o] of outfits) o.visible = true;
+      try { await compileForComposer(gltf.scene, scene); } finally { for (const [o, v] of outfits) o.visible = v; }
+    }
+  } catch (err) {
+    console.warn('could not warm the figures:', err);   // the first look will simply cost a frame
+  }
+}
+
+/**
+ * Compile shaders the way they will actually be used.
+ *
+ * The game draws into the composer's offscreen target, where three.js uses linear
+ * output and no tone mapping; compiling against the canvas (ACES, sRGB) builds
+ * programs with different keys, which are never drawn with, so the first real
+ * frame pays for its own. That showed as 100-300 ms hitches. The target has to be
+ * the composer's when compile() starts, which is when program keys are decided.
+ */
+async function compileForComposer(object, targetScene) {
+  const rt = composer ? composer.readBuffer : null;
+  const previous = renderer.getRenderTarget();
+  renderer.setRenderTarget(rt);
+  try {
+    await renderer.compileAsync(object, camera, targetScene);
+  } finally {
+    renderer.setRenderTarget(previous);
+  }
+}
+
+/* ------------------------------------------------------------- governor -- */
+
+let governor = null;
+const reflection = { every: 1 };           // 1: every frame, 2: every other frame
+
+/** Every other frame is enough for a floor reflection; it lags by one frame, which cannot be seen. */
+function throttleReflector() {
+  const r = app.world && app.world.reflector;
+  if (!r || r.userData.throttled) return;
+  const original = r.onBeforeRender;
+  let n = 0;
+  r.onBeforeRender = function (...args) {
+    if (reflection.every === 2 && (n++ & 1)) return;
+    return original.apply(this, args);
+  };
+  r.userData.throttled = true;
+}
+
+function startGovernor() {
+  governor = new Governor({
+    setScale(f) { if (app.scale !== f) { app.scale = f; applySize(); } },
+    setBloom(on) { if (bloomPass) bloomPass.enabled = on; },
+    setReflection(mode) {
+      reflection.every = mode || 1;
+      const r = app.world && app.world.reflector;
+      if (r) r.visible = mode !== 0;
+    },
+    setCanopy(layers) {
+      const t = app.world && app.world.tree;
+      const second = t && t.imported && t.group.getObjectByName('BlossomB');
+      if (second) second.visible = layers > 1;
+    }
+  }, { start: app.qualityName === 'high' ? 0 : 2 });
+  governor.reapply();
+  window.museoGovernor = governor;
 }
 
 /* ----------------------------------------------------------------- boot -- */
@@ -814,16 +949,15 @@ async function boot() {
     }
   }
 
-  character = new Character(app.textures);
-  character.setOutfit(app.outfit);
+  character = await makeCharacter();
   character.onEvent = (name) => {
     if (name === 'release') spawnCoin();
     if (name === 'shutter') ambience.shutter();
     if (name === 'sip') ambience.sip();
     if (name === 'draw' || name === 'exhale') {
       if (character._smokeUniforms) {
-        character.headPosition(_hand);
-        character._smokeUniforms.uOrigin.value.copy(_hand).add(new THREE.Vector3(0, -0.02, 0));
+        (character.mouthPosition || character.headPosition).call(character, _hand);
+        character._smokeUniforms.uOrigin.value.copy(_hand).add(new THREE.Vector3(0, 0.02, 0));
         character._smokeUniforms.uBirth.value = elapsed;
       }
     }
@@ -842,6 +976,14 @@ async function boot() {
   const quality = QUALITY[app.qualityName];
   setupComposer(quality);
   buildWorld(quality);
+
+  throttleReflector();
+  startGovernor();
+
+  // Compile every shader now, while the loading screen is up, so the first look
+  // into a side chamber is not a half-second hitch.
+  ui.progress(0.96, 'warming the light');
+  try { await compileForComposer(scene); } catch { /* an old browser: it will compile lazily */ }
 
   ui.progress(1, 'the room is ready');
   player.position.set(0, 0, 11.4);

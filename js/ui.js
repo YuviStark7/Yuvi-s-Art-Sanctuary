@@ -3,18 +3,16 @@
  * under your gaze, the coin panel, the wish box, the pause menu and the
  * reading panel for a work.
  */
-import { WARDROBE, FIGURE, WARDROBE_COPY } from './wardrobe.js';
+import { WARDROBE, FIGURE, FIGURES, figureById, WARDROBE_COPY } from './wardrobe.js';
 import { WISHING_COPY } from './payments.config.js';
 
 const $ = (id) => document.getElementById(id);
 
 /** The racks, in the order a person would actually get dressed. */
 const RACKS = [
+  { key: 'body', label: 'Figure', list: 'bodies' },
   { key: 'tone', label: 'Skin', list: null, tone: true },
-  { key: 'top', label: 'Top', list: 'tops' },
-  { key: 'bottom', label: 'Bottom', list: 'bottoms' },
-  { key: 'shoe', label: 'Shoes', list: 'shoes' },
-  { key: 'hat', label: 'Head', list: 'hats' },
+  { key: 'outfit', label: 'Dress', list: 'outfits' },
   { key: 'hand', label: 'In hand', list: 'hands' }
 ];
 
@@ -175,7 +173,11 @@ export class UI {
     e.racks.textContent = '';
 
     for (const rack of RACKS) {
-      const items = rack.tone ? FIGURE.tones : WARDROBE[rack.list];
+      // the outfits on offer depend on which figure is chosen
+      const items = rack.tone ? FIGURE.tones
+        : rack.list === 'bodies' ? FIGURES
+        : rack.list === 'outfits' ? figureById(outfit.body).outfits
+        : WARDROBE[rack.list];
       if (!items || !items.length) continue;
 
       const wrap = document.createElement('div');
