@@ -208,11 +208,30 @@ kbd {
 /* ------------------------------------------------------------ loading -- */
 
 .bar {
+  position: relative;
   height: 1px;
   width: 100%;
   background: rgba(230, 226, 217, 0.14);
   margin: 34px 0 14px;
   overflow: hidden;
+}
+
+/* A download the server gives no content length for cannot move the bar
+   honestly, and a bar that holds still is the one thing that reads as a dead
+   page. The sweep says the connection is alive without claiming progress it
+   cannot measure. */
+.bar.waiting::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent, rgba(230, 226, 217, 0.55), transparent);
+  animation: sweep 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes sweep {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
 }
 .bar i {
   display: block;
@@ -229,6 +248,19 @@ kbd {
   margin: 0;
   letter-spacing: 0.04em;
 }
+
+/* the second line under the step, where a long wait accounts for itself */
+.note.detail {
+  font-style: normal;
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: rgba(230, 226, 217, 0.44);
+  margin-top: 11px;
+  min-height: 1em;
+  transition: opacity 0.5s ease;
+}
+.note.detail:empty { opacity: 0; }
 
 /* shown when the page cannot start, in place of the progress bar */
 .note.failure {
@@ -465,6 +497,9 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   #grain { animation: none; }
   .plate, .viewer-inner { animation: none; }
+  /* the waiting bar still has to read as alive, so it holds a dim fill
+     rather than sweeping */
+  .bar.waiting::after { animation: none; opacity: 0.3; }
 }
 
 /* ============================================================= wardrobe == */

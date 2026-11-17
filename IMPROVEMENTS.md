@@ -1,8 +1,9 @@
 # Improvements queue
 
 This file is the work list for the daily improvement routine. It takes the
-**first unchecked item under Queue**, implements that one thing, merges it into
-`main` itself, and moves the item to Done.
+**first unchecked item under Queue**, implements that one thing, and opens a pull
+request for it. It never merges and never pushes to `main`; the item moves to
+Done when the PR is merged.
 
 **To steer it, edit this file.** Move an item to the top to get it next, add
 your own in the same shape, or empty the Queue entirely to make the routine
@@ -10,22 +11,14 @@ stop proposing changes and only suggest.
 
 Each item should say what to change and, crucially, **how to tell whether it
 worked** — the routine runs in the cloud and cannot see the render, so it
-depends on you to judge the result. It is now merging that unverified work
-straight to the published site, so read the Done notes.
+depends on you to judge the result. Its work reaches the published site only
+when you merge the PR, so read the PR's "could not verify" notes first.
 
 ---
 
 ## Queue
 
-### 1. A loading screen worth the wait
-The blossom tree is 4.3 MB and downloads behind the existing progress gate.
-Right now "planting the tree" is a bare progress step. Make the wait feel
-intentional rather than broken on a slow connection.
-
-Nothing heavy — the gate already exists in `js/ui.js`.
-
-*How to judge it:* throttle to Slow 3G in devtools and reload. It should read
-as deliberate, never as a hang.
+*(empty — add an item above the Parked ones to give the routine something to do)*
 
 ## Parked — do not start
 
@@ -101,6 +94,19 @@ The figure's measurements moved into `js/figure.metrics.js`, which
 there is one copy of them and not two. The probe's two hand rows fall from
 266 mm to nothing, as predicted, and it now refuses to run rather than measure
 a figure nobody ships. `tools/rig-figure.mjs` still keeps its own copy. (PR #13)
+
+### A loading screen worth the wait
+The tree was the only step that could ever be a real wait, and it was the one
+step that said the least: the bar crawled through six per cent of its width
+for however long 4.3 MB took, and said nothing at all when the server sent no
+content length to crawl against. It now accounts for itself — the megabytes as
+they land, the subject when none have, and that the room opens without the
+tree either way — but only after `LOADING.patience` seconds, so a fast visit
+never sees it. Where there is no content length and so no honest fraction to
+draw, the bar sweeps rather than standing still. `LOADING.patience` to
+Infinity and `LOADING.sweep` to false give the old screen back exactly.
+**Not looked at on screen** — the copy, the spacing of the second line and the
+sweep on a one-pixel rule are all unseen. (PR #16)
 
 ### Keep the camera inside the building
 The arm is tested along its whole length instead of only at its end, and
