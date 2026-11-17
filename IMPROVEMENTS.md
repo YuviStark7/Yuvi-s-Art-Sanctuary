@@ -152,9 +152,9 @@ room with room to spare even from inside a chamber. (PR #1)
 ## Rules the routine follows
 
 - One item per run. Never more.
-- Branch `improve/<slug>`, then **merge it into `main` itself**. No pull
-  request, no review, no waiting. The branch is still how the work is built, so
-  a bad run stays one `git revert` away.
+- Branch `improve/<slug>`, then **open a pull request**. Never merge it, never
+  push to `main`: the owner reviews and merges. The branch keeps a bad run one
+  `git revert` away.
 - No build step, no npm dependencies, no CDN links. three.js stays vendored.
 - Respect the three quality presets. Anything expensive is off or reduced at low.
 - Never touch the brand placeholders in `js/wardrobe.js`, the keys in
