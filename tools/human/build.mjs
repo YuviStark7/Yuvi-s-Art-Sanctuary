@@ -13,7 +13,7 @@ import { GLBBuilder } from '../glb-write.mjs';
 import { SRC, parseObj, macroBody, buildMesh, smoothNormals } from './mh.mjs';
 import { parseMhclo, loadProxyMesh, fitProxy, parseMhmat } from './mhclo.mjs';
 import { loadRig, repose, poseVertices, vertexWeights, proxyWeights, gameBones, foldWeights, Q } from './rig.mjs';
-import { webp, raw, fromRaw, bleed } from './tex.mjs';
+import { webp, raw, fromRaw, bleed, averageColour } from './tex.mjs';
 import { CHARACTERS } from './characters.mjs';
 
 const ASSETS = path.join(SRC, 'assets');
@@ -103,6 +103,31 @@ export async function buildCharacter(key) {
   }
   for (const o of Object.values(outfits)) { /* meshes already in `all` */ void o; }
   const bonePlaced = bonePos.map(place);
+
+  // Anchor points the page aims hands at. The joint groups are small helper cubes in
+  // the base mesh; their centroid, carried through the same pose, is the joint.
+  const groupCentre = (name) => {
+    const gi = base.groups.indexOf(name);
+    const ids = new Set();
+    for (const f of base.faces) if (f.g === gi) for (const v of f.v) ids.add(v);
+    let x = 0, y = 0, z = 0;
+    for (const v of ids) { x += posedBody[v * 3]; y += posedBody[v * 3 + 1]; z += posedBody[v * 3 + 2]; }
+    return place([x / ids.size, y / ids.size, z / ids.size]);
+  };
+  const palm = (L) => {
+    const t = (n) => pose.transforms[n].head;
+    const pts = [t('wrist.' + L), t('finger2-1.' + L), t('finger5-1.' + L), t('finger3-1.' + L)];
+    return place([0, 1, 2].map((k) => pts.reduce((a, q) => a + q[k], 0) / pts.length));
+  };
+  const eyeL = groupCentre('joint-l-eye'), eyeR = groupCentre('joint-r-eye');
+  const anchors = {
+    // joint-mouth is the jaw hinge, behind the eyes; the lips sit ~9 cm below the eye line, at the face
+    mouth: [0, eyeL[1] - 0.092 * (spec.height / 1.8), eyeL[2] - 0.010],
+    eyeL, eyeR,
+    palmL: palm('L'), palmR: palm('R'),
+    crown: place([0, top, 0])
+  };
+  for (const k of Object.keys(anchors)) anchors[k] = anchors[k].map((v) => +v.toFixed(4));
 
   // 5. write it
   const b = new GLBBuilder();
@@ -245,13 +270,17 @@ export async function buildCharacter(key) {
 
   b.g.scenes[0].nodes = sceneNodes;
   b.g.asset.generator = 'stark-museo tools/human/build.mjs';
-  b.g.asset.extras = { height: spec.height, bones: bones.length, source: 'MakeHuman CC0 base and system assets; suits by Margaret Toigo (CC0)' };
+  // Tone is applied at runtime as a ratio against what the textures actually contain.
+  const skinBase = averageColour(path.join(SYS, spec.skin), { mask: 'body' });
+  const hairBase = averageColour(path.join(hair.mh.dir, parseMhmat(path.join(hair.mh.dir, hair.mh.material)).diffuseTexture), { alpha: true });
+  b.g.asset.extras = { height: spec.height, bones: bones.length, anchors, skinBase, hairBase, source: 'MakeHuman CC0 base and system assets; suits by Margaret Toigo (CC0)' };
 
   fs.mkdirSync(OUT, { recursive: true });
   const file = path.join(OUT, `figure-${key}${process.env.SUFFIX || ''}.glb`);
   const bytes = b.write(file);
   const tris = (m) => m.I.length / 3;
   console.log(`${key}: ${(bytes / 1048576).toFixed(2)} MB  bones ${bones.length}  floor ${floor.toFixed(3)}  scale ${scale.toFixed(3)}`);
+  console.log('  anchors', JSON.stringify(anchors));
   console.log(`  tris: body ${tris(bodyMesh)} eyes ${tris(eyes.mesh)} lashes ${tris(lashes.mesh)} brows ${tris(brows.mesh)} hair ${tris(hair.mesh)}`);
   for (const [id, o] of Object.entries(outfits)) console.log(`  outfit ${id}: suit ${tris(o.suit.mesh)} shoes ${tris(o.shoes.mesh)}`);
   return file;

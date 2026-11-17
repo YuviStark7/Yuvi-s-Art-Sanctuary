@@ -3,9 +3,14 @@
  *  THE WARDROBE — brand placements go here.
  * ============================================================================
  *
- *  Visitors dress a figure before they walk into the sanctuary. Each entry
- *  below is one garment, and each garment can carry a brand name and a chest
- *  graphic. Everything is generated from these numbers — no 3D files.
+ *  Visitors choose a figure and dress it before they walk into the sanctuary.
+ *  There are two figures, a man and a woman, each a 3D model built from CC0
+ *  parts (see tools/human/). Each figure has outfits, and each outfit carries a
+ *  brand name, so a partner's tailoring goes into FIGURES below.
+ *
+ *  WARDROBE (tops, bottoms, shoes, hats) is the older, procedural wardrobe. It is
+ *  only used if the 3D figure fails to load and js/character.procedural.js takes
+ *  over, which is why it is still here.
  *
  *  Every entry takes:
  *
@@ -39,6 +44,42 @@ export const FIGURE = {
   ],
   defaultTone: 1
 };
+
+/**
+ * The two figures and what each can wear.
+ *
+ * An outfit is a garment set that lives inside the figure's .glb, so adding one
+ * means building it (tools/human/characters.mjs) and listing it here. `color`
+ * and `trim` are only the swatch shown on the wardrobe screen.
+ */
+export const FIGURES = [
+  {
+    id: 'male',
+    name: 'Man',
+    note: 'Classic cut',
+    model: './models/figure-male.glb',
+    color: 0x2a2d3a,
+    outfits: [
+      { id: 'tuxedo', brand: 'BRAND ONE', name: 'Dinner jacket', note: 'White, satin shawl lapel', color: 0xefece6, trim: 0x15151a },
+      { id: 'suit', brand: 'BRAND TWO', name: 'Navy suit', note: 'Pinstripe wool', color: 0x1d2540, trim: 0xc23a3f }
+    ]
+  },
+  {
+    id: 'female',
+    name: 'Woman',
+    note: 'Classic cut',
+    model: './models/figure-female.glb',
+    color: 0x3a2d33,
+    outfits: [
+      { id: 'suit', brand: 'BRAND ONE', name: 'Double-breasted suit', note: 'Charcoal wool', color: 0x2c2b35, trim: 0x7a1d2e },
+      { id: 'skirt', brand: 'BRAND TWO', name: 'Skirt suit', note: 'Black, tailored', color: 0x222226, trim: 0xe8e4de }
+    ]
+  }
+];
+
+export function figureById(id) {
+  return FIGURES.find((f) => f.id === id) || FIGURES[0];
+}
 
 export const WARDROBE = {
 
@@ -163,6 +204,8 @@ export const WARDROBE = {
 
 /** What a visitor arrives wearing before they touch anything. */
 export const DEFAULT_OUTFIT = {
+  body: 'male',
+  outfit: 'tuxedo',
   tone: 'tone-2',
   top: 'top-ecru',
   bottom: 'btm-stone',
@@ -174,6 +217,6 @@ export const DEFAULT_OUTFIT = {
 /** Copy shown on the wardrobe screen. */
 export const WARDROBE_COPY = {
   title: 'Before you go in',
-  intro: 'Dress for the visit. What you carry, you can use — press G once you are inside.',
+  intro: 'Choose who goes in, and dress for the visit. What you carry, you can use — press G once you are inside.',
   enter: 'Enter the sanctuary'
 };

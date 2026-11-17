@@ -80,3 +80,24 @@ export function bleed(src, size, { quality = 80, passes = 6, solid = 128, tint }
   if (tint) for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) buf[i * 4 + k] = Math.min(255, buf[i * 4 + k] * tint[k]);
   return fromRaw(buf, size, size, 'rgba', { quality });
 }
+
+
+/**
+ * Average colour of a texture, in LINEAR light (what a shader multiplies in).
+ * `alpha`: weight by opacity, so a hair card's empty texels do not count.
+ * `mask: 'body'`: skip the flat background an atlas leaves around its islands, by
+ * ignoring texels that match the corner colour.
+ */
+export function averageColour(src, { alpha = false, mask } = {}) {
+  const S = 128;
+  const buf = raw(src, S, S, 'rgba');
+  const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  const bg = [buf[0], buf[1], buf[2]];
+  let r = 0, g = 0, b = 0, w = 0;
+  for (let i = 0; i < S * S; i++) {
+    let k = alpha ? buf[i * 4 + 3] / 255 : 1;
+    if (mask === 'body' && Math.abs(buf[i * 4] - bg[0]) + Math.abs(buf[i * 4 + 1] - bg[1]) + Math.abs(buf[i * 4 + 2] - bg[2]) < 6) k = 0;
+    r += lin(buf[i * 4]) * k; g += lin(buf[i * 4 + 1]) * k; b += lin(buf[i * 4 + 2]) * k; w += k;
+  }
+  return [r / w, g / w, b / w].map((v) => +v.toFixed(4));
+}

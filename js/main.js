@@ -22,7 +22,7 @@ import { Tour, defaultStops } from './tour.js';
 import { Ambience } from './audio.js';
 import { UI } from './ui.js';
 import { ARTWORKS, EXHIBITION } from './artworks.js';
-import { DEFAULT_OUTFIT, WARDROBE } from './wardrobe.js';
+import { DEFAULT_OUTFIT, WARDROBE, figureById } from './wardrobe.js';
 import { PAYMENTS } from './payments.config.js';
 
 /* ------------------------------------------------------------- quality -- */
@@ -548,9 +548,15 @@ const ui = new UI({
   },
   onWardrobeChange: (cat, id) => {
     app.outfit[cat] = id;
+    if (cat === 'body') {
+      // the outfits on offer belong to the figure, so offer the new figure's
+      app.outfit.outfit = figureById(id).outfits[0].id;
+      ui.buildWardrobe(app.outfit);
+    }
     if (character) {
-      character.setOutfit(app.outfit);
-      attachSmoke();
+      const done = character.setOutfit(app.outfit);
+      // a 3D figure loads asynchronously the first time it is chosen
+      if (done && done.then) done.then(attachSmoke); else attachSmoke();
     }
   },
   onEnter: () => {
@@ -777,6 +783,24 @@ function frame(now) {
   if (composer) composer.render(0);
 }
 
+/**
+ * The visitor. The 3D figure is a few megabytes; if it cannot be fetched the
+ * sanctuary should still open, so the older procedural figure takes over.
+ */
+async function makeCharacter() {
+  try {
+    const c = new Character();
+    await c.setOutfit(app.outfit);
+    return c;
+  } catch (err) {
+    console.warn('3D figure unavailable, using the procedural one instead:', err);
+    const { Character: Procedural } = await import('./character.procedural.js');
+    const c = new Procedural(app.textures);
+    c.setOutfit(app.outfit);
+    return c;
+  }
+}
+
 /* ----------------------------------------------------------------- boot -- */
 
 async function boot() {
@@ -814,16 +838,15 @@ async function boot() {
     }
   }
 
-  character = new Character(app.textures);
-  character.setOutfit(app.outfit);
+  character = await makeCharacter();
   character.onEvent = (name) => {
     if (name === 'release') spawnCoin();
     if (name === 'shutter') ambience.shutter();
     if (name === 'sip') ambience.sip();
     if (name === 'draw' || name === 'exhale') {
       if (character._smokeUniforms) {
-        character.headPosition(_hand);
-        character._smokeUniforms.uOrigin.value.copy(_hand).add(new THREE.Vector3(0, -0.02, 0));
+        (character.mouthPosition || character.headPosition).call(character, _hand);
+        character._smokeUniforms.uOrigin.value.copy(_hand).add(new THREE.Vector3(0, 0.02, 0));
         character._smokeUniforms.uBirth.value = elapsed;
       }
     }
