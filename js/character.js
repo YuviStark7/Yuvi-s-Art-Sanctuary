@@ -127,7 +127,7 @@ export class Character {
       m.receiveShadow = true;
       const mats1 = Array.isArray(m.material) ? m.material : [m.material];
       mats1.forEach((mat, i) => {
-        if (mat.name === 'skin' || mat.name === 'hair' || mat.name === 'eye') {
+        if (mat.name === 'skin' || mat.name === 'hair' || mat.name === 'eye' || mat.name === 'brow') {
           const c = mat.clone();
           if (Array.isArray(m.material)) m.material[i] = c; else m.material = c;
           mats[mat.name] = c;
@@ -185,6 +185,7 @@ export class Character {
     const f = this.fig;
     if (!f) return;
     this.root.remove(f.scene);
+    f.scene.traverse((o) => { if (o.isSkinnedMesh && o.skeleton) o.skeleton.dispose(); });   // each clone owns a bone texture
     for (const m of Object.values(f.mats)) m.dispose();          // the textures belong to the cached model
     this.fig = null;
   }
@@ -199,6 +200,9 @@ export class Character {
     if (f.mats.skin) f.mats.skin.color.copy(toneMultiplier(tone.color, f.skinBase));
     if (f.mats.hair) f.mats.hair.color.copy(toneMultiplier(tone.hair === undefined ? 0x2b211b : tone.hair, f.hairBase));
 
+    // brows take the hair's colour: the texture is only the ink, so tint it, and lift it a little
+    if (f.mats.brow) f.mats.brow.color.set(tone.hair === undefined ? 0x2b211b : tone.hair).multiplyScalar(3.2);
+
     const want = f.outfits[this.outfit.outfit] ? this.outfit.outfit : Object.keys(f.outfits)[0];
     this.outfit.outfit = want;
     for (const [id, node] of Object.entries(f.outfits)) node.visible = id === want;
@@ -210,12 +214,23 @@ export class Character {
   /* ------------------------------------------------------------ held item */
 
   _removeItem() {
-    if (this._handItem && this._handItem.parent) this._handItem.parent.remove(this._handItem);
+    if (this._handItem) {
+      // the item is built fresh each time it is chosen, so it owns its geometry and materials
+      this._handItem.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) for (const m of (Array.isArray(o.material) ? o.material : [o.material])) m.dispose();
+      });
+      if (this._handItem.parent) this._handItem.parent.remove(this._handItem);
+    }
     this._handItem = null;
     this._ember = null;
     // the smoke belongs to the scene, so main.js can see it; it is rebuilt with the item
     if (this._smoke && this._smoke.parent) this._smoke.parent.remove(this._smoke);
-    if (this._smoke) { this._smoke.geometry.dispose(); this._smoke.material.dispose(); }
+    if (this._smoke) {
+      this._smoke.geometry.dispose();
+      this._smoke.material.dispose();
+      if (this._smokeUniforms && this._smokeUniforms.uSprite.value) this._smokeUniforms.uSprite.value.dispose();
+    }
     this._smoke = null;
     this._smokeUniforms = null;
   }

@@ -136,39 +136,70 @@ you when you step into a side chamber. There are no audio files.
 
 **Edit [`js/wardrobe.js`](js/wardrobe.js).**
 
-Visitors dress a figure before they walk in — two tops, two bottoms, two pairs
-of shoes, a choice of headwear, and something to carry. Each entry carries a
-brand name, an item name, colours, and optionally a graphic printed on the
-chest:
+Visitors choose a figure, a man or a woman, and dress it before they walk in:
+a skin tone, an outfit, and something to carry. The figures are 3D models of
+real proportions with a modelled face, hands, hair and tailored clothes, and
+each wears classic formal wear:
+
+| | outfits |
+|---|---|
+| **Man** | white dinner jacket with a satin shawl lapel and bow tie · navy pinstripe suit with a red tie |
+| **Woman** | charcoal double-breasted suit · black skirt suit and blouse |
+
+Each outfit is an entry in `FIGURES`, with a brand name, an item name, a note
+and two swatch colours for the wardrobe screen:
 
 ```js
-{
-  id:      'top-ecru',
-  brand:   'YOUR PARTNER',
-  name:    'Boxy Tee',
-  note:    'Heavyweight cotton',
-  color:   0xefe9dd,          // main colour
-  trim:    0xe2dacb,          // collar and cuffs
-  graphic: 'brands/partner.png',   // optional chest print, PNG with alpha
-  sleeve:  'short'            // or 'long'
-}
+{ id: 'tuxedo', brand: 'YOUR PARTNER', name: 'Dinner jacket',
+  note: 'White, satin shawl lapel', color: 0xefece6, trim: 0x15151a }
 ```
 
-Put logo PNGs in a `brands/` folder next to `artworks/`. A missing file is
-skipped with a warning rather than breaking the rack.
+**The brand names shipped in that file are placeholders** (`BRAND ONE`,
+`BRAND TWO`), deliberately generic, implying nothing about any real company.
+Replace them with your partners' names before you show this to anyone.
 
-**The names shipped in that file are placeholders** — `BRAND ONE`, `BRAND TWO`
-and so on. They are deliberately generic and imply nothing about any real
-company. Replace them with your partners' names before you show this to
-anyone.
+An outfit lives inside the figure's `.glb`, so a new one means building it and
+then listing it here; see [`tools/human/`](tools/human/) and
+[Adding a partner's tailoring](#adding-a-partners-tailoring) below.
 
 What a visitor carries is not decoration: press `G` inside and the figure
-drinks, takes a photograph, or takes a draw, with the sound to match.
+drinks, takes a photograph, or takes a draw, with the sound to match. Each is a
+place the hand has to go — to the lips, to the eye — and an arm solver finds the
+angles, so the same actions serve both figures at their different heights.
 
-The figure is skinned to a seventeen-bone skeleton, so limbs bend rather than
-pivot, and it wears a painted face — which is how every character in the games
-this is aiming at got theirs. Skin tone and hair colour are chosen at the door
-and live at the top of the same file.
+If a figure cannot be downloaded the sanctuary still opens, with the older
+procedural figure (`js/character.procedural.js`) standing in.
+
+### How the figures are made
+
+Each is one skinned `.glb`, about 3.5 MB, built offline by
+[`tools/human/build.mjs`](tools/human/build.mjs) from CC0 parts:
+
+- **Body, rig, weights and morph targets** are [MakeHuman](https://github.com/makehumancommunity/makehuman)'s,
+  published CC0. The man and woman are two settings of the same macro morph.
+- **The suits** are Margaret Toigo's (CC0), fitted to the body with MakeHuman's
+  `.mhclo` mechanism: every garment vertex is anchored to three body vertices
+  plus an offset scaled by the body's own proportions, so one suit follows any
+  body and inherits its skin weights from the vertices it sits on.
+- **Eyes, brows, lashes, hair, skin and shoes** are MakeHuman's own system assets.
+- The A-pose is **settled into a hanging pose at build time**, using MakeHuman's
+  twist bones so the forearm roll is spread along the arm, so the bind pose is the
+  neutral pose and every bone starts world-aligned. 163 bones fold to 49;
+  fingers are kept, because a hand that holds a glass needs them.
+- Vertex data is quantized (`KHR_mesh_quantization`) and textures are WebP.
+
+The raw assets are fetched, not committed: `tools/human/fetch.mjs` pulls single
+files out of MakeHuman's 20-270 MB packs over HTTP range requests, so a few tens
+of MB come down instead of a gigabyte.
+
+### Adding a partner's tailoring
+
+1. Get a `.mhclo` garment fitted to the MakeHuman base mesh (MakeHuman's own
+   asset packs have hundreds; [MakeClothes](https://github.com/makehumancommunity/community-plugins-makeclothes)
+   makes more from any model).
+2. Fetch it: `node tools/human/fetch.mjs <pack> "<path regex>"`.
+3. Add it to `outfits` in [`tools/human/characters.mjs`](tools/human/characters.mjs).
+4. `node tools/human/build.mjs male` (or `female`), then list it in `FIGURES`.
 
 ---
 
@@ -271,24 +302,21 @@ halves the canopy from 128,000 triangles to 70,000.
 
 ### Importing a character
 
-[`tools/rig-figure.mjs`](tools/rig-figure.mjs) rigs an unrigged T-pose body
-onto the sanctuary's own 17-bone skeleton — it finds the landmarks, lays the
-bone chain out in the mesh's proportions, weights the vertices against the bone
-segments, and writes inverse-bind matrices from the T-pose so the arms fall to
-the sides on their own and every animation already written drives it unchanged.
-
-It works, but be careful what you feed it. A **base mesh** sold for sculpting is
-not a character: the one tried here had no skeleton, no UV coordinates at all
-(so nothing can ever be painted on it), no clothes, and a completely blank head
-with no facial features. Rigging it produced a bald, faceless, naked figure.
-
-If you want to replace the studio figure, look for a model that says all of:
+The figures in the sanctuary are built by [`tools/human/`](tools/human/) (see
+*How the figures are made*, above). Nothing here depends on it, but if you want a
+different body or a different pipeline, know what to ask for. A **base mesh**
+sold for sculpting is not a character: one tried here had no skeleton, no UV
+coordinates at all (so nothing can ever be painted on it), no clothes, and a
+completely blank head. Look for a model that says all of:
 
 - **rigged** or **skinned**, ideally humanoid/Mixamo-compatible
 - **clothed**, or at least with separate garment meshes
-- **textured**, with a face — check the thumbnails show a face, not grey clay
+- **textured**, with a face: check the thumbnails show a face, not grey clay
 - **.glb or .gltf** available, not only .blend/.max/.fbx
 - under about 15 MB once textures are counted
+
+[`tools/rig-figure.mjs`](tools/rig-figure.mjs) rigs an unrigged T-pose body onto
+the older 17-bone skeleton. It still works, but it targets the procedural figure.
 
 ---
 
@@ -322,6 +350,36 @@ can be paused or deleted.
 
 ---
 
+## Staying smooth
+
+The quality presets are a guess made before anyone's machine is known. On a
+GTX 1650 at 1080p they cost 3.7 ms (low), 7.6 (medium) and 11.4 (high) a frame,
+so a machine three or four times slower than that, on the default, lands at
+20-30 fps. [`js/governor.js`](js/governor.js) fixes that by measuring instead of
+guessing: it watches the interval between frames and, when they run long, sheds
+cost in small steps that need no rebuild of the room.
+
+| step | what changes | GPU ms (measured) |
+|---|---|---|
+| 0 | as built | 11.7 |
+| 1 | 85% resolution, floor reflection every other frame | 8.7 |
+| 2 | no bloom | 7.3 |
+| 3 | thinner canopy, 72% resolution | 5.3 |
+| 4 | no floor reflection | 5.3 |
+| 5 | 58% resolution | 3.2 |
+
+When there is room it probes a step back up, and a step that failed is left
+alone for a couple of minutes. The last step it settled on is remembered, so the
+next visit starts there. It reads only frame intervals, so it works in every
+browser. `node tools/test-governor.mjs` runs it against a simulated slow, fast
+and recovering machine.
+
+Also static: bloom runs at half resolution (it is a soft glow), and every shader
+is compiled behind the loading screen so the first look into a chamber is not a
+half-second hitch.
+
+---
+
 ## How it is put together
 
 ```
@@ -337,7 +395,10 @@ js/
   models.js         loading imported .glb files, and keeping them cached
   gallery.js        where the work hangs, how it is lit and labelled
   wardrobe.js       ← brand placements go here
-  character.js      the figure, its clothes and how it moves
+  character.js      loads a figure, dresses it, walks it and performs the actions
+  character.procedural.js  the older procedural figure, kept as a fallback
+  figure/           the arm solver (ik.js) and what the figure can hold (items.js)
+  governor.js       measures frame time and sheds cost to keep it smooth
   coin.js           coins in flight, and the pile on the basin floor
   wishes.js         payment and the wish book
   payments.config.js  ← Stripe and Supabase settings
@@ -346,9 +407,10 @@ js/
   audio.js          synthesised water and room tone
   ui.js             entrance, pause menu, the reading panel
   main.js           assembly and the frame loop
-models/             imported .glb models (the blossom tree)
+models/             .glb models: the blossom tree and the two figures
 tools/              offline scripts: cutting a tree out of a pack, rigging a
                     figure, measuring one for limbs that clip the body
+tools/human/        builds the man and the woman from CC0 MakeHuman parts
 serve.mjs           tiny local preview server (not used by the published site)
 start.cmd / .sh     double-click to preview locally
 vendor/three/       three.js r185 (MIT), vendored so nothing is fetched at runtime
@@ -416,4 +478,15 @@ A few decisions worth knowing about if you go poking around:
 ## Credits
 
 Built with [three.js](https://threejs.org) (MIT), vendored in `vendor/three/`.
+
+The figures are assembled from [MakeHuman](https://github.com/makehumancommunity/makehuman)
+community assets, all published under CC0 1.0, which asks for no credit; it is
+given here anyway because it is due:
+
+- the base body, skeleton, skin weights, morph targets, eyes, brows, lashes, hair,
+  skin textures and shoes: the MakeHuman community
+- the suits (`toigo_suit_with_dinner_jacket`, `toigo_male_suit_3`,
+  `toigo_female_double-breasted_suit`, `toigo_female_suit`): Margaret Toigo
+- the blossom tree is cut from a tree pack by its original author
+
 Everything else is generated at runtime.

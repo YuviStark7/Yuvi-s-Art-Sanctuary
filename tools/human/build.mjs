@@ -227,7 +227,7 @@ export async function buildCharacter(key) {
   // --- eyes -----------------------------------------------------------------
   const eyeMat = material('eye', () => ({
     name: 'eye',
-    pbrMetallicRoughness: { baseColorTexture: { index: tex(webp(path.join(SYS, 'eyes', 'materials', spec.eye + '_eye.png'), { size: 512, quality: 85 })) }, metallicFactor: 0, roughnessFactor: 0.18 },
+    pbrMetallicRoughness: { baseColorTexture: { index: tex(webp(path.join(SYS, 'eyes', 'materials', spec.eye + '_eye.png'), { size: 512, quality: 85, vf: spec.eyeVf || '' })) }, metallicFactor: 0, roughnessFactor: 0.18 },
     alphaMode: 'MASK', alphaCutoff: 0.5
   }));
   sceneNodes.push(meshNode('eyes', [prim(eyes.mesh, eyes.weights, eyeMat)]));
@@ -240,7 +240,7 @@ export async function buildCharacter(key) {
     return { name: id, pbrMetallicRoughness: pbr, alphaMode: 'MASK', alphaCutoff: cutoff, doubleSided: true };
   });
   sceneNodes.push(meshNode('lashes', [prim(lashes.mesh, lashes.weights, cut('lash', lashes.mh, 512, 0.30, { factor: [0.10, 0.08, 0.07, 1] }))]));
-  sceneNodes.push(meshNode('brows', [prim(brows.mesh, brows.weights, cut('brow', brows.mh, 512, 0.12, { factor: spec.browColor || [0.20, 0.13, 0.09, 1] }))]));
+  sceneNodes.push(meshNode('brows', [prim(brows.mesh, brows.weights, cut('brow', brows.mh, 512, 0.12, { factor: [1, 1, 1, 1] }))]));
   sceneNodes.push(meshNode('hair', [prim(hair.mesh, hair.weights, cut('hair', hair.mh, 1024, 0.45))]));
 
   // --- outfits --------------------------------------------------------------
