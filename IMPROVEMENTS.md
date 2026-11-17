@@ -15,37 +15,28 @@ straight to the published site, so read the Done notes.
 
 ---
 
+## Hold — read this first
+
+**The figure is being replaced, by hand, on the branch `figure/realistic-humans`.**
+The old procedural figure cannot be repaired into something that looks real, so
+a new male and female pair, built from CC0 MakeHuman parts, is going in. Until
+that merges, **do not touch**:
+
+- `js/character.js`, `js/figure.metrics.js`, `js/wardrobe.js`
+- the figure parts of `js/main.js` and `js/player.js`
+- `tools/probe-figure.mjs`, `tools/rig-figure.mjs`, `tools/human/`, `models/`
+
+Anything you change there will be thrown away, and a merge conflict with a
+rewrite is the most expensive kind. The performance work on `js/main.js`
+(quality presets, the frame loop) is also in progress, so keep any change there
+to a handful of lines.
+
+**The site is also being made lighter.** Nothing in the Queue may add GPU work
+per frame. That is why the two items under *Parked* are not in the Queue.
+
 ## Queue
 
-### 1. Fix the figure — what is left of it
-Three faults were reported together. Two are now fixed and one was never
-reproduced, so this item stays open until the figure is looked at on screen.
-
-- **Hands on the wrong sides — fixed (PR #8).** `_handGeometry()` built both
-  hands on the centre line and never carried them out to the wrist, so a rigid
-  bind to `wrist<side>` left each hand 183 mm on the far side of its own wrist,
-  buried in the pelvis and sweeping out through it twice a stride.
-- **Chest print mirrored — fixed (PR #9).** The print's `u` ran from the
-  figure's left to its right, so every logo was printed back to front. The face
-  patch was unmirrored in the same pass; that half is a no-op today, because
-  `faceTexture()` draws one eye and mirrors it.
-- **Face reversed — not reproduced.** No fault was ever found. The suspicion is
-  that it was the hands all along: a figure whose hands are on the wrong sides
-  reads as turned around. **Check this first, now that PR #8 has landed.**
-- **Arms through the body — improved, not solved (PR #11).** `ARM_CLEARANCE`
-  moved the upper arm's buried flank out of the chest. What remains is a
-  bind-pose overlap that PR #10's probe says no weighting can fix: the probe,
-  now that it reads the figure it ships (PR #13), puts the bare arm's worst
-  breakout at 12.2 mm over 4 vertices on the left and 3.1 mm over 2 on the
-  right. The sleeve over it is worse than the arm — 36.8 mm over 14 vertices
-  on the long sleeve — so look at the figure dressed, not bare.
-
-*How to judge it:* walk the figure toward you and away again, dressed in each
-top. Its face should read as facing where it walks, its right hand should stay
-on your left, and its arms should swing clear of its hips from every angle. If
-any of that is still wrong, say which — these are no longer one fault.
-
-### 2. Softer shadow edges
+### 1. Softer shadow edges
 Shadows are currently a single hard-ish map. A PCSS-style or wider PCF filter
 would suit overcast light much better — contact-sharp near the floor, soft
 further away.
@@ -58,7 +49,22 @@ frame. Keep that property.
 should have a soft edge, and the tree's shadow on the island should stay crisp
 where trunk meets rock.
 
-### 3. Finer concrete up close
+### 2. A loading screen worth the wait
+The blossom tree is 4.3 MB and downloads behind the existing progress gate.
+Right now "planting the tree" is a bare progress step. Make the wait feel
+intentional rather than broken on a slow connection.
+
+Nothing heavy — the gate already exists in `js/ui.js`.
+
+*How to judge it:* throttle to Slow 3G in devtools and reload. It should read
+as deliberate, never as a hang.
+
+## Parked — do not start
+
+Both of these add per-frame GPU cost, and the site is currently being made
+lighter. They come back once frame time has headroom again.
+
+### Finer concrete up close
 The concrete is procedural and convincing at a distance, but soft when you walk
 up to a wall. Add a detail normal layered at a much higher frequency on top of
 the existing triplanar projection, fading in as the camera gets close.
@@ -69,17 +75,7 @@ larger canvas costs start-up time on every visit.
 *How to judge it:* walk right up to a wall between two artworks. It should
 retain fine tooth rather than going smooth.
 
-### 4. A loading screen worth the wait
-The blossom tree is 4.3 MB and downloads behind the existing progress gate.
-Right now "planting the tree" is a bare progress step. Make the wait feel
-intentional rather than broken on a slow connection.
-
-Nothing heavy — the gate already exists in `js/ui.js`.
-
-*How to judge it:* throttle to Slow 3G in devtools and reload. It should read
-as deliberate, never as a hang.
-
-### 5. Real reflection and refraction in the pool
+### Real reflection and refraction in the pool
 The water currently uses an analytic reflection — a pale dome with the oculus
 punched into it — rather than a true reflection pass. Upgrade it, and add
 caustics on the pool basin.

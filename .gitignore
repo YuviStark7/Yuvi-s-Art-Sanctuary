@@ -11,3 +11,6 @@ node_modules/
 
 # Local Claude Code settings (personal machine state, not project config)
 .claude/settings.local.json
+
+# scratch viewer pages used while building models
+_probe/
