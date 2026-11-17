@@ -33,33 +33,19 @@ reproduced, so this item stays open until the figure is looked at on screen.
   that it was the hands all along: a figure whose hands are on the wrong sides
   reads as turned around. **Check this first, now that PR #8 has landed.**
 - **Arms through the body — improved, not solved (PR #11).** `ARM_CLEARANCE`
-  moved the upper arm's buried flank out of the chest, halving the seam from
-  17.0 mm over 12 vertices to 9.7 mm over 6. What remains is a bind-pose
-  overlap that PR #10's probe says no weighting can fix.
+  moved the upper arm's buried flank out of the chest. What remains is a
+  bind-pose overlap that PR #10's probe says no weighting can fix: the probe,
+  now that it reads the figure it ships (PR #13), puts the bare arm's worst
+  breakout at 12.2 mm over 4 vertices on the left and 3.1 mm over 2 on the
+  right. The sleeve over it is worse than the arm — 36.8 mm over 14 vertices
+  on the long sleeve — so look at the figure dressed, not bare.
 
 *How to judge it:* walk the figure toward you and away again, dressed in each
 top. Its face should read as facing where it walks, its right hand should stay
 on your left, and its arms should swing clear of its hips from every angle. If
 any of that is still wrong, say which — these are no longer one fault.
 
-### 2. Make the figure probe read the figure, not a copy of it
-`tools/probe-figure.mjs` restates the constants in `js/character.js` by hand
-instead of importing them, and the two have already drifted. The probe still
-places the arm at `s * X.shoulder` and authors the hand on the centre line, so
-it measures the figure as it was *before* PRs #8 and #11. Run it today and it
-reports the hands 266 mm out of the body, which is no longer true — the tool
-bought to check the figure now lies about it.
-
-Import the shared numbers from `js/character.js` rather than restating them, or
-lift them into a small module both files import. Either way the probe must fail
-loudly if a constant it depends on disappears, rather than quietly measuring a
-figure nobody ships.
-
-*How to judge it:* run `node tools/probe-figure.mjs`. The two hand rows should
-fall to nothing, because the hands are fixed. Whatever is still listed is real,
-and is the arm overlap item 1 leaves open.
-
-### 3. Softer shadow edges
+### 2. Softer shadow edges
 Shadows are currently a single hard-ish map. A PCSS-style or wider PCF filter
 would suit overcast light much better — contact-sharp near the floor, soft
 further away.
@@ -72,7 +58,7 @@ frame. Keep that property.
 should have a soft edge, and the tree's shadow on the island should stay crisp
 where trunk meets rock.
 
-### 4. Finer concrete up close
+### 3. Finer concrete up close
 The concrete is procedural and convincing at a distance, but soft when you walk
 up to a wall. Add a detail normal layered at a much higher frequency on top of
 the existing triplanar projection, fading in as the camera gets close.
@@ -83,7 +69,7 @@ larger canvas costs start-up time on every visit.
 *How to judge it:* walk right up to a wall between two artworks. It should
 retain fine tooth rather than going smooth.
 
-### 5. A loading screen worth the wait
+### 4. A loading screen worth the wait
 The blossom tree is 4.3 MB and downloads behind the existing progress gate.
 Right now "planting the tree" is a bare progress step. Make the wait feel
 intentional rather than broken on a slow connection.
@@ -93,7 +79,7 @@ Nothing heavy — the gate already exists in `js/ui.js`.
 *How to judge it:* throttle to Slow 3G in devtools and reload. It should read
 as deliberate, never as a hang.
 
-### 6. Real reflection and refraction in the pool
+### 5. Real reflection and refraction in the pool
 The water currently uses an analytic reflection — a pale dome with the oculus
 punched into it — rather than a true reflection pass. Upgrade it, and add
 caustics on the pool basin.
@@ -109,6 +95,13 @@ and moving light should play across the basin floor.
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### Make the figure probe read the figure, not a copy of it
+The figure's measurements moved into `js/figure.metrics.js`, which
+`js/character.js` builds from and `tools/probe-figure.mjs` measures with, so
+there is one copy of them and not two. The probe's two hand rows fall from
+266 mm to nothing, as predicted, and it now refuses to run rather than measure
+a figure nobody ships. `tools/rig-figure.mjs` still keeps its own copy. (PR #13)
 
 ### Keep the camera inside the building
 The arm is tested along its whole length instead of only at its end, and
@@ -131,9 +124,9 @@ so the item stays in the Queue, trimmed to what is left of it.
 `tools/probe-figure.mjs` rebuilds the skeleton and the limb tubes, drives them
 through the walk cycle with the vendored three.js, and reports every vertex
 that is inside the body at rest and outside it mid-stride. Nothing in the
-published site changes — `tools/` is not loaded by `index.html`. It restates
-`js/character.js`'s numbers instead of importing them and has already drifted
-from them, which is now item 2 in the Queue. (PR #10)
+published site changes — `tools/` is not loaded by `index.html`. It arrived
+restating `js/character.js`'s numbers instead of importing them, and had
+already drifted from them; PR #13 gave both files one copy to read. (PR #10)
 
 ### Light through the blossom
 Back-scatter on the `Blossom` material, added by overriding `RE_Direct` from

@@ -14,54 +14,20 @@
 import * as THREE from 'three';
 import { clothSurface, leatherSurface, skinSurface, faceTexture, softDot } from './textures.js';
 import { WARDROBE, FIGURE } from './wardrobe.js';
+// The figure's measurements sit in their own module because the offline tools
+// in tools/ measure this same body and cannot load this file: it asks for
+// 'three' through the page's import map, which node has no notion of.
+import {
+  Y, X, B, BONES, CHAINS, TORSO, ARM_STOPS, LEG_STOPS, LIMB, HAND, GARMENT_PAD,
+  armOffset, clearInboardFlank, topShell, seatShell, sleeveStops, trouserStops,
+  inflate, taper, sectionAt
+} from './figure.metrics.js';
 
-/* -------------------------------------- the figure, in metres off the floor */
+/* ----------------------------------------- the head, in metres off the floor */
 
-const Y = {
-  hips: 0.95, spine: 1.09, chest: 1.26, neck: 1.44, head: 1.615,
-  shoulder: 1.41, elbow: 1.13, wrist: 0.88,
-  knee: 0.51, ankle: 0.09
-};
-const X = { shoulder: 0.183, leg: 0.084 };
 const HEAD_R = 0.104;
 /** Scaled to a real skull: 16cm across, 23cm tall, 19cm deep. */
 const HEAD_SCALE = [0.78, 1.10, 0.92];
-
-/** Bone order. Each name's index is its slot in the skeleton. */
-const BONES = [
-  'hips', 'spine', 'chest', 'neck', 'head',
-  'shoulderL', 'elbowL', 'wristL',
-  'shoulderR', 'elbowR', 'wristR',
-  'hipL', 'kneeL', 'ankleL',
-  'hipR', 'kneeR', 'ankleR'
-];
-const B = {};
-BONES.forEach((n, i) => { B[n] = i; });
-
-/** Which bones drive which stretch of the body, root outward. */
-const CHAINS = {
-  torso: [
-    { bone: B.hips, y: Y.hips }, { bone: B.spine, y: Y.spine },
-    { bone: B.chest, y: Y.chest }, { bone: B.neck, y: Y.neck }
-  ],
-  head: [{ bone: B.neck, y: Y.neck }, { bone: B.head, y: Y.head }],
-  armL: [
-    { bone: B.shoulderL, y: Y.shoulder }, { bone: B.elbowL, y: Y.elbow },
-    { bone: B.wristL, y: Y.wrist }
-  ],
-  armR: [
-    { bone: B.shoulderR, y: Y.shoulder }, { bone: B.elbowR, y: Y.elbow },
-    { bone: B.wristR, y: Y.wrist }
-  ],
-  legL: [
-    { bone: B.hipL, y: Y.hips }, { bone: B.kneeL, y: Y.knee },
-    { bone: B.ankleL, y: Y.ankle }
-  ],
-  legR: [
-    { bone: B.hipR, y: Y.hips }, { bone: B.kneeR, y: Y.knee },
-    { bone: B.ankleR, y: Y.ankle }
-  ]
-};
 
 /* --------------------------------------------------------------- geometry -- */
 
@@ -148,26 +114,6 @@ function loftTube(sections, radial, capBottom, capTop, ox, oz) {
   geo.setIndex(index);
   geo.computeBoundingSphere();
   return geo;
-}
-
-/** Builds a limb's section stack between height stops, with a mid bulge. */
-function taper(stops, bulge) {
-  const secs = [];
-  const span = stops[stops.length - 1].y - stops[0].y || 1;
-  for (let i = 0; i < stops.length - 1; i++) {
-    const a = stops[i], b = stops[i + 1];
-    const steps = 4;
-    for (let k = 0; k < steps; k++) {
-      const t = k / steps;
-      const y = a.y + (b.y - a.y) * t;
-      let r = a.r + (b.r - a.r) * t;
-      if (bulge) r *= 1 + Math.sin(((y - stops[0].y) / span) * Math.PI) * bulge;
-      secs.push({ y, rx: r, rz: r * 0.93 });
-    }
-  }
-  const last = stops[stops.length - 1];
-  secs.push({ y: last.y, rx: last.r, rz: last.r * 0.93 });
-  return secs.sort((p, q) => p.y - q.y);
 }
 
 /** A rounded slab, for feet, hands and the camera body. */
@@ -352,82 +298,7 @@ function bakeOcclusion(geo, strength, skip) {
   return geo;
 }
 
-/* ----------------------------------------------------------- body shapes -- */
-
-const TORSO = [
-  { y: 0.828, rx: 0.144, rz: 0.104 },
-  { y: 0.878, rx: 0.155, rz: 0.111 },
-  { y: 0.930, rx: 0.158, rz: 0.113 },
-  { y: 1.010, rx: 0.141, rz: 0.100 },
-  { y: 1.110, rx: 0.132, rz: 0.094 },
-  { y: 1.190, rx: 0.140, rz: 0.099 },
-  { y: 1.270, rx: 0.156, rz: 0.107 },
-  { y: 1.345, rx: 0.166, rz: 0.111 },
-  { y: 1.408, rx: 0.157, rz: 0.102 },
-  { y: 1.448, rx: 0.116, rz: 0.088 }
-];
-
-const ARM_STOPS = [
-  { y: Y.shoulder + 0.03, r: 0.055 },
-  { y: Y.elbow, r: 0.0425 },
-  { y: Y.wrist, r: 0.0335 }
-];
-
-const LEG_STOPS = [
-  { y: Y.hips + 0.02, r: 0.0855 },
-  { y: Y.knee, r: 0.0615 },
-  { y: Y.ankle, r: 0.0425 }
-];
-
-/**
- * How far the upper arm's inboard flank is moved out of the chest.
- *
- * The arm hangs beside a ribcage of nearly its own width, so the flank facing
- * the body sits a few millimetres inside the chest the whole way down. A few
- * millimetres would be harmless — buried is simply hidden — but the shoulder
- * swings far enough to carry that flank out through the skin of the shirt and
- * back in twice a stride, and it is the moving seam, not the burial, that
- * reads as an arm passing through the body.
- *
- * Clearing the arm outright would take thirty millimetres more shoulder width,
- * which is a different figure. This moves the flank alone: the tube is shifted
- * outboard and loses the same off its own `rx`, so the arm's outer edge and
- * its depth stay exactly where they were and only the buried side moves.
- */
-const ARM_CLEARANCE = 0.010;
-
-/**
- * Takes `ARM_CLEARANCE` off a section stack's `rx`, fading to nothing at the
- * elbow. Below there the arm is already clear of the chest, and the forearm is
- * seen from every angle, so it is left exactly as it was.
- */
-function clearInboardFlank(sections) {
-  return sections.map((s) => {
-    const k = Math.max(0, Math.min(1, (s.y - Y.elbow) / 0.06));
-    return { y: s.y, rx: s.rx - ARM_CLEARANCE * k, rz: s.rz };
-  });
-}
-
-/** Grows a copy of a section stack outward, for a garment over a body part. */
-function inflate(sections, pad, from, to) {
-  return sections
-    .filter((s) => s.y >= (from === undefined ? -9 : from) && s.y <= (to === undefined ? 9 : to))
-    .map((s) => ({ y: s.y, rx: s.rx + pad, rz: s.rz + pad }));
-}
-
-/** The section stack, read at any height. */
-function sectionAt(sections, y) {
-  if (y <= sections[0].y) return { rx: sections[0].rx, rz: sections[0].rz };
-  const last = sections[sections.length - 1];
-  if (y >= last.y) return { rx: last.rx, rz: last.rz };
-  for (let i = 1; i < sections.length; i++) {
-    if (y > sections[i].y) continue;
-    const a = sections[i - 1], b = sections[i];
-    const k = (y - a.y) / (b.y - a.y || 1);
-    return { rx: a.rx + (b.rx - a.rx) * k, rz: a.rz + (b.rz - a.rz) * k };
-  }
-  return { rx: last.rx, rz: last.rz };
-}
+/* --------------------------------------------------------- garment trim -- */
 
 /** A collar, cuff or waistband that follows the body's ellipse. */
 function bandGeometry(sections, y, height, pad, radial, ox) {
@@ -690,9 +561,9 @@ export class Character {
     for (const side of ['L', 'R']) {
       const s = side === 'L' ? -1 : 1;
 
-      const arm = loftTube(clearInboardFlank(taper(ARM_STOPS, 0.05)), 18, true, true,
-                           s * (X.shoulder + ARM_CLEARANCE), 0);
-      skinChain(arm, CHAINS['arm' + side], 0.085);
+      const arm = loftTube(clearInboardFlank(taper(ARM_STOPS, LIMB.arm.bulge)),
+                           LIMB.arm.radial, true, true, armOffset(s), 0);
+      skinChain(arm, CHAINS['arm' + side], LIMB.arm.band);
       bakeOcclusion(arm, 0.6, ['arm' + side]);
       this.bodyMeshes.push(this._skinned(arm, this.skinMat));
 
@@ -701,8 +572,9 @@ export class Character {
       bakeOcclusion(hand, 0.4, ['arm' + side]);
       this.bodyMeshes.push(this._skinned(hand, this.skinMat));
 
-      const leg = loftTube(taper(LEG_STOPS, 0.055), 20, true, false, s * X.leg, 0);
-      skinChain(leg, CHAINS['leg' + side], 0.10);
+      const leg = loftTube(taper(LEG_STOPS, LIMB.leg.bulge), LIMB.leg.radial,
+                           true, false, s * X.leg, 0);
+      skinChain(leg, CHAINS['leg' + side], LIMB.leg.band);
       bakeOcclusion(leg, 0.55, ['leg' + side]);
       this.bodyMeshes.push(this._skinned(leg, this.skinMat));
 
@@ -784,24 +656,22 @@ export class Character {
    */
   _handGeometry(s) {
     const parts = [];
-    const palm = slab(0.070, 0.062, 0.031, 0.014, 3);
-    palm.translate(0, Y.wrist - 0.034, 0);
-    parts.push(palm);
-
-    const fingers = slab(0.066, 0.062, 0.027, 0.013, 3);
-    fingers.translate(0, Y.wrist - 0.092, 0.002);
-    parts.push(fingers);
-
-    for (const dx of [-0.021, 0.021]) {
-      const groove = new THREE.CylinderGeometry(0.0032, 0.0032, 0.058, 6);
-      groove.translate(dx, Y.wrist - 0.096, -0.014);
-      parts.push(groove);
+    for (const part of HAND.parts) {
+      if (part.slab) {
+        const box = part.slab;
+        const geo = slab(box.w, box.h, box.d, box.r, box.segs);
+        if (part.tiltZ) geo.rotateZ(s * part.tiltZ);
+        geo.translate(s * part.at[0], part.at[1], part.at[2]);
+        parts.push(geo);
+      } else {
+        const g = part.grooves;
+        for (const dx of [-g.dx, g.dx]) {
+          const groove = new THREE.CylinderGeometry(g.radius, g.radius, g.length, 6);
+          groove.translate(part.at[0] + dx, part.at[1], part.at[2]);
+          parts.push(groove);
+        }
+      }
     }
-
-    const thumb = slab(0.024, 0.046, 0.024, 0.011, 2);
-    thumb.rotateZ(s * 0.55);
-    thumb.translate(-s * 0.030, Y.wrist - 0.052, 0.008);
-    parts.push(thumb);
 
     // Out to the arm's line, the way the foot sits out on the leg's. The hand
     // is bound rigidly to the wrist, and a rigid bind keeps a vertex exactly
@@ -810,7 +680,7 @@ export class Character {
     // offset rather than the bone's, because `ARM_CLEARANCE` moved the tube
     // outboard and the wrist would otherwise step in by that much.
     const geo = merge(parts);
-    geo.translate(s * (X.shoulder + ARM_CLEARANCE), 0, 0);
+    geo.translate(armOffset(s), 0, 0);
     return geo;
   }
 
@@ -909,25 +779,22 @@ export class Character {
     const mat = this._clothMat(top.color, 3.2);
     const trimMat = this._clothMat(top.trim === undefined ? top.color : top.trim, 1.4);
 
-    const body = inflate(TORSO, 0.021, 0.82, 1.46);
+    const body = topShell();
     body.unshift({ y: 0.800, rx: body[0].rx * 0.985, rz: body[0].rz * 0.985 });  // hem
     this._wear(loftTube(body, 28, false, false), mat, CHAINS.torso, 0.13, 0.55, ['torso']);
 
-    this._wear(bandGeometry(inflate(TORSO, 0.021), 1.452, 0.026, 0.005, 24),
+    this._wear(bandGeometry(inflate(TORSO, GARMENT_PAD.top), 1.452, 0.026, 0.005, 24),
                trimMat, CHAINS.torso, 0.09, 0.7, ['torso']);
 
     const long = top.sleeve === 'long';
     for (const side of ['L', 'R']) {
       const s = side === 'L' ? -1 : 1;
-      const end = long ? Y.wrist + 0.028 : Y.shoulder - 0.150;
-      // the sleeve head has to reach inboard far enough to meet the body of
-      // the shirt, or a notch of bare shoulder shows between them
-      const stops = long
-        ? [{ y: Y.shoulder + 0.034, r: 0.065 }, { y: Y.elbow, r: 0.049 }, { y: end, r: 0.041 }]
-        : [{ y: Y.shoulder + 0.034, r: 0.065 }, { y: end, r: 0.057 }];
+      const stops = sleeveStops(long);
+      const end = stops[stops.length - 1].y;
 
-      this._wear(loftTube(taper(stops, 0.03), 18, false, true, s * X.shoulder, 0),
-                 mat, CHAINS['arm' + side], 0.085, 0.6, ['arm' + side]);
+      this._wear(loftTube(taper(stops, LIMB.sleeve.bulge), LIMB.sleeve.radial,
+                          false, true, s * X.shoulder, 0),
+                 mat, CHAINS['arm' + side], LIMB.sleeve.band, 0.6, ['arm' + side]);
 
       if (long) {
         this._wear(bandGeometry(
@@ -985,20 +852,16 @@ export class Character {
     const trimMat = this._clothMat(btm.trim === undefined ? btm.color : btm.trim, 1.4, denim);
     const wide = btm.cut === 'wide';
 
-    const seat = inflate(TORSO, 0.013, 0.82, 1.02);
+    const seat = seatShell();
     this._wear(loftTube(seat, 26, true, false), mat, CHAINS.torso, 0.13, 0.55, ['torso']);
-    this._wear(bandGeometry(inflate(TORSO, 0.013), 1.008, 0.044, 0.002, 28),
+    this._wear(bandGeometry(inflate(TORSO, GARMENT_PAD.bottom), 1.008, 0.044, 0.002, 28),
                trimMat, CHAINS.torso, 0.11, 0.6, ['torso']);
 
     for (const side of ['L', 'R']) {
       const s = side === 'L' ? -1 : 1;
-      const stops = [
-        { y: Y.hips + 0.03, r: 0.098 },
-        { y: Y.knee, r: wide ? 0.086 : 0.076 },
-        { y: Y.ankle + 0.035, r: wide ? 0.085 : 0.063 }
-      ];
-      this._wear(loftTube(taper(stops, 0.02), 22, false, true, s * X.leg, 0),
-                 mat, CHAINS['leg' + side], 0.10, 0.55, ['leg' + side]);
+      this._wear(loftTube(taper(trouserStops(wide), LIMB.trouser.bulge),
+                          LIMB.trouser.radial, false, true, s * X.leg, 0),
+                 mat, CHAINS['leg' + side], LIMB.trouser.band, 0.55, ['leg' + side]);
     }
   }
 
