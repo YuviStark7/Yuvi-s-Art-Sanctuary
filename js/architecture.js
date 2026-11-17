@@ -11,7 +11,7 @@
  */
 import * as THREE from 'three';
 import { Reflector } from 'three/addons/objects/Reflector.js';
-import { HALL, OCULUS, SKYLIGHTS, ALCOVES, POOL, BENCHES, PALETTE, OCCLUSION, SUN } from './config.js';
+import { HALL, OCULUS, SKYLIGHTS, ALCOVES, POOL, BENCHES, PALETTE, OCCLUSION, SUN, CONCRETE_DETAIL } from './config.js';
 
 const TAU = Math.PI * 2;
 
@@ -426,7 +426,7 @@ function loftOutline(outline, origin, forward, right, up, depth) {
  * parameterisation entirely — and it gives the swept seating, which carries no
  * UVs at all, a real surface for free.
  */
-export function makeTriplanar(material, scale, mottle = 0) {
+export function makeTriplanar(material, scale, mottle = 0, detail = false) {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uTriScale = { value: scale };
 
@@ -492,9 +492,59 @@ export function makeTriplanar(material, scale, mottle = 0) {
                            + texture2D( roughnessMap, tpR.xy ).g * twR.z;
         #endif
       `);
+
+    if (detail) addDetailNormal(shader);
   };
-  material.customProgramCacheKey = () => 'triplanar' + scale + 'm' + mottle;
+  material.customProgramCacheKey = () => 'triplanar' + scale + 'm' + mottle + (detail ? 'd' : '');
   return material;
+}
+
+/**
+ * Adds the plaster's grain as relief up close, from the photograph the wall already carries.
+ *
+ * The plaster's own normal map turned out to be almost flat (its relief is all in the colour),
+ * so the height is the photograph's brightness, read a second time at a fraction of the size and
+ * turned into a bump by screen-space derivatives. That adds no texture to download, and only the
+ * relief is doubled: a fine tile of the stains in the colour would read as a pattern.
+ *
+ * The three reads sit inside a test on the fade, so a wall across the room pays for none of them.
+ * The test is per fragment, which leaves the derivatives undefined along the edge of the branch,
+ * where the result is multiplied by a fade of nearly zero.
+ */
+function addDetailNormal(shader) {
+  shader.uniforms.uDetailTile = { value: CONCRETE_DETAIL.tile };
+  shader.uniforms.uDetailStrength = { value: CONCRETE_DETAIL.strength };
+  shader.uniforms.uDetailFade = { value: new THREE.Vector2(CONCRETE_DETAIL.fadeNear, CONCRETE_DETAIL.fadeFar) };
+
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', `
+        #include <common>
+        uniform float uDetailTile;
+        uniform float uDetailStrength;
+        uniform vec2 uDetailFade;
+      `)
+    .replace('#include <normal_fragment_maps>', `
+        #include <normal_fragment_maps>
+        #ifdef USE_MAP
+        {
+          float detailFade = 1.0 - smoothstep( uDetailFade.x, uDetailFade.y, distance( vTriPos, cameraPosition ) );
+          if ( detailFade > 0.0 ) {
+            vec3 twN = triWeights();
+            vec3 tpN = vTriPos / uDetailTile;
+            float h = dot( texture2D( map, tpN.zy ).rgb, vec3( 0.3333 ) ) * twN.x
+                    + dot( texture2D( map, tpN.xz ).rgb, vec3( 0.3333 ) ) * twN.y
+                    + dot( texture2D( map, tpN.xy ).rgb, vec3( 0.3333 ) ) * twN.z;
+            vec2 dH = vec2( dFdx( h ), dFdy( h ) ) * ( uDetailStrength * detailFade );
+            vec3 sx = dFdx( - vViewPosition );
+            vec3 sy = dFdy( - vViewPosition );
+            vec3 r1 = cross( sy, normal );
+            vec3 r2 = cross( normal, sx );
+            float det = dot( sx, r1 );
+            normal = normalize( abs( det ) * normal - sign( det ) * ( dH.x * r1 + dH.y * r2 ) );
+          }
+        }
+        #endif
+      `);
 }
 
 /* ------------------------------------------------------ room occlusion -- */
@@ -791,6 +841,7 @@ export function buildSanctuary(textures, quality) {
   // was tuned to read at that size. Shown at 0.6 of the old period the plaster grain comes out
   // at a believable size and the repeat stays hard to find.
   const mottleAmount = textures.concrete.photo && quality.roomAO ? 0.16 : 0;
+  const tooth = textures.concrete.photo && quality.concreteDetail;
   const tile = (period) => period * (textures.concrete.photo ? 0.6 : 1);
   const concrete = makeTriplanar(new THREE.MeshStandardMaterial({
     color: PALETTE.concrete,
@@ -799,7 +850,7 @@ export function buildSanctuary(textures, quality) {
     roughness: 0.94,
     metalness: 0.0,
     side: THREE.FrontSide
-  }), tile(3.4), mottleAmount);
+  }), tile(3.4), mottleAmount, tooth);
 
   const interiorMat = makeTriplanar(new THREE.MeshStandardMaterial({
     color: 0x8e8a83,
@@ -808,7 +859,7 @@ export function buildSanctuary(textures, quality) {
     roughness: 0.94,
     metalness: 0.0,
     side: THREE.DoubleSide
-  }), tile(3.4), mottleAmount);
+  }), tile(3.4), mottleAmount, tooth);
 
   const revealMat = makeTriplanar(new THREE.MeshStandardMaterial({
     color: PALETTE.concreteDeep,
@@ -817,7 +868,7 @@ export function buildSanctuary(textures, quality) {
     roughness: 0.95,
     metalness: 0.0,
     side: THREE.DoubleSide
-  }), tile(2.2), mottleAmount);
+  }), tile(2.2), mottleAmount, tooth);
 
   /* ---- shell ---- */
   const shell = new THREE.Mesh(buildShellMesh(profile, openings, rings, segs), concrete);

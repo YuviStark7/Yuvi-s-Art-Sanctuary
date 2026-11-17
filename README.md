@@ -368,8 +368,12 @@ broad stains filtered out, because a photographed wall carries its own big blotc
 1 m tile of them lines up into bands across a dome; the shader supplies slow variation from the
 world position instead (no extra texture reads).
 
-Two effects ride on the surfaces, high and medium presets only:
+Three effects ride on the surfaces, high and medium presets only:
 
+- **grain up close** — within about 4.5 m the wall's own photograph is read a second time at 0.5 m
+  and turned into relief with screen-space derivatives (`addDetailNormal`, tuned by
+  `CONCRETE_DETAIL`), so a wall at arm's length keeps its tooth. The plaster's own normal map is
+  almost flat, so none is shipped; three texture reads, none past the fade distance.
 - **dappled sun** — the sun's pools on the floor are broken up by a tiling leaf cookie, as if
   the light came through a canopy above the opening (`makeSunDapple`). One texture read.
 - **caustics** — the net of light on the basin's bed, from position and time (`makeCaustics`).
