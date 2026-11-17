@@ -25,6 +25,8 @@ export const LADDER = [
   { scale: 0.58, bloom: false, reflect: 0, canopy: 1 }      // the floor
 ];
 
+const HITCH = 120;               // ms: a longer frame is a throttled or backgrounded tab, not a slow GPU
+const REMEMBER_MAX = 3;          // never restore a remembered step deeper than this: it may have been learned wrongly
 const WINDOW = 36;               // frames per decision
 const SETTLE = 40;               // frames ignored after a change, while things warm up
 const PROBE_AFTER = 20000;       // ms of steady frames before trying a step back up
@@ -39,7 +41,7 @@ export class Governor {
     this.hooks = hooks;
     this.key = key;
     this.enabled = true;
-    this.step = Math.min(LADDER.length - 1, Math.max(0, start, readStep(key)));
+    this.step = Math.min(LADDER.length - 1, Math.max(0, start, Math.min(REMEMBER_MAX, readStep(key))));
 
     this._last = 0;
     this._buf = [];
@@ -62,14 +64,30 @@ export class Governor {
     this._buf.length = 0;
   }
 
+  /**
+   * The visitor chose a quality themselves: go back to that preset as built, and forget
+   * what the governor had learned about steps that did not hold. The preset is the ceiling;
+   * the governor only ever sheds from it.
+   */
+  reset() {
+    this.step = 0;
+    this._bad.fill(0);
+    this._probing = false;
+    this._changed = clock();
+    writeStep(this.key, 0);
+    this.reapply();
+  }
+
   /** Call once per rendered frame with a timestamp in ms. */
   frame(t) {
     if (!this._last) { this._last = t; return; }
     const dt = t - this._last;
     this._last = t;
 
-    // A hidden tab or a single long hitch says nothing about steady-state cost
-    if (!this.enabled || document.hidden || dt > 250) {
+    // A hidden tab, a throttled one, or a single long hitch says nothing about steady-state cost.
+    // A browser that is not drawing a window at full rate delivers frames 130-1000 ms apart; read
+    // as load, that would walk the quality to the floor and remember it.
+    if (!this.enabled || document.hidden || dt > HITCH) {
       this._settle = SETTLE; this._buf.length = 0; return;
     }
     if (this._settle > 0) { this._settle--; return; }

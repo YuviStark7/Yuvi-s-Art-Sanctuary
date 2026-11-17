@@ -254,7 +254,7 @@ export async function buildCharacter(key) {
   for (const [id, o] of Object.entries(outfits)) {
     const suitMat = material('suit:' + id, () => {
       const m = parseMhmat(path.join(o.suit.mh.dir, o.suit.mh.material));
-      const pbr = { baseColorTexture: { index: tex(webp(path.join(o.suit.mh.dir, m.diffuseTexture), { size: 2048, quality: o.spec.quality || 78, vf: o.spec.vf || '' })) }, metallicFactor: 0, roughnessFactor: 0.78 };
+      const pbr = { baseColorTexture: { index: tex(webp(path.join(o.suit.mh.dir, m.diffuseTexture), { size: o.spec.size || 1536, quality: o.spec.quality || 80, vf: o.spec.vf || '' })) }, metallicFactor: 0, roughnessFactor: 0.78 };
       const out = { name: 'suit:' + id, pbrMetallicRoughness: pbr, doubleSided: true };
       if (m.normalmapTexture) out.normalTexture = { index: tex(webp(path.join(o.suit.mh.dir, m.normalmapTexture), { size: 1024, quality: 88 })), scale: 0.9 };
       if (m.specularmapTexture) {

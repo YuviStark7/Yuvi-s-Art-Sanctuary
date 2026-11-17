@@ -15,14 +15,14 @@ import { buildIsland, buildTree, buildImportedTree } from './nature.js';
 import { loadModel, modelTextures } from './models.js';
 import { buildGallery, loadArtworkTextures } from './gallery.js';
 import { Player } from './player.js';
-import { Character } from './character.js';
+import { Character, prepareFigureScene } from './character.js';
 import { CoinPool } from './coin.js';
 import { WishingWell } from './wishes.js';
 import { Tour, defaultStops } from './tour.js';
 import { Ambience } from './audio.js';
 import { UI } from './ui.js';
 import { ARTWORKS, EXHIBITION } from './artworks.js';
-import { DEFAULT_OUTFIT, WARDROBE, figureById } from './wardrobe.js';
+import { DEFAULT_OUTFIT, WARDROBE, FIGURES, figureById } from './wardrobe.js';
 import { PAYMENTS } from './payments.config.js';
 import { Governor } from './governor.js';
 
@@ -546,6 +546,7 @@ async function sendWish(text) {
 
 const ui = new UI({
   onGetReady: () => {
+    warmFigures();
     ambience.start();
     app.mode = 'wardrobe';
     app.running = true;
@@ -673,7 +674,7 @@ async function changeQuality(name) {
   setupComposer(quality);
   buildWorld(quality);
   throttleReflector();
-  if (governor) governor.reapply();
+  if (governor) governor.reset();          // an explicit choice is the new ceiling
   ui.busy(false);
 }
 
@@ -811,6 +812,69 @@ async function makeCharacter() {
   }
 }
 
+/**
+ * Warm the figures while the visitor is choosing one.
+ *
+ * The first time a figure or outfit is drawn its textures are uploaded to the GPU,
+ * which measured 225-255 ms in one frame: a stall in the wardrobe at exactly the
+ * moment someone taps. So the moment they reach the wardrobe, fetch the figures
+ * they might pick and upload every texture, one a frame, in the background. Done
+ * only where memory is not tight, because the textures of outfits that are never
+ * picked are uploaded too.
+ */
+let warmed = false;
+async function warmFigures() {
+  if (warmed) return;
+  warmed = true;
+  const tight = matchMedia('(pointer: coarse)').matches || (navigator.deviceMemory && navigator.deviceMemory < 4);
+  if (tight) return;
+  const pause = () => new Promise((r) => setTimeout(r, 60));
+  try {
+    for (const def of FIGURES) {
+      const gltf = await loadModel(def.model);
+      prepareFigureScene(gltf.scene);
+      const seen = new Set();
+      gltf.scene.traverse((o) => {
+        if (!o.material) return;
+        for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+          for (const slot of ['map', 'normalMap', 'roughnessMap', 'metalnessMap']) if (m[slot]) seen.add(m[slot]);
+        }
+      });
+      for (const t of seen) { renderer.initTexture(t); await pause(); }
+
+      // The outfits that are not showing have shaders nobody has asked for yet (a suit
+      // without a normal map is a different program from one with), so compile every
+      // outfit with all of them visible, against the room's real lights.
+      const outfits = [];
+      gltf.scene.traverse((o) => { if (/^outfit_/.test(o.name) && !o.isMesh) outfits.push([o, o.visible]); });
+      for (const [o] of outfits) o.visible = true;
+      try { await compileForComposer(gltf.scene, scene); } finally { for (const [o, v] of outfits) o.visible = v; }
+    }
+  } catch (err) {
+    console.warn('could not warm the figures:', err);   // the first look will simply cost a frame
+  }
+}
+
+/**
+ * Compile shaders the way they will actually be used.
+ *
+ * The game draws into the composer's offscreen target, where three.js uses linear
+ * output and no tone mapping; compiling against the canvas (ACES, sRGB) builds
+ * programs with different keys, which are never drawn with, so the first real
+ * frame pays for its own. That showed as 100-300 ms hitches. The target has to be
+ * the composer's when compile() starts, which is when program keys are decided.
+ */
+async function compileForComposer(object, targetScene) {
+  const rt = composer ? composer.readBuffer : null;
+  const previous = renderer.getRenderTarget();
+  renderer.setRenderTarget(rt);
+  try {
+    await renderer.compileAsync(object, camera, targetScene);
+  } finally {
+    renderer.setRenderTarget(previous);
+  }
+}
+
 /* ------------------------------------------------------------- governor -- */
 
 let governor = null;
@@ -919,7 +983,7 @@ async function boot() {
   // Compile every shader now, while the loading screen is up, so the first look
   // into a side chamber is not a half-second hitch.
   ui.progress(0.96, 'warming the light');
-  try { await renderer.compileAsync(scene, camera); } catch { /* an old browser: it will compile lazily */ }
+  try { await compileForComposer(scene); } catch { /* an old browser: it will compile lazily */ }
 
   ui.progress(1, 'the room is ready');
   player.position.set(0, 0, 11.4);

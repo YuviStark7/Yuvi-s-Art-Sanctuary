@@ -26,6 +26,30 @@ import { WARDROBE } from './wardrobe.js';
 import { Arm } from './figure/ik.js';
 import { buildItem } from './figure/items.js';
 
+
+/**
+ * Set, on the cached model, every flag that changes which shader program a figure
+ * needs. three.js bakes `receiveShadow` and `alphaToCoverage` into the program key,
+ * so a pre-compile of a model that does not yet have them compiles programs that
+ * are never used, and the real figure then pays for its own on first draw (measured:
+ * 100-170 ms in one frame). Everything that clones the model clones these flags.
+ */
+export function prepareFigureScene(scene) {
+  if (scene.userData.prepared) return scene;
+  scene.userData.prepared = true;
+  scene.traverse((o) => {
+    if (!o.isMesh) return;
+    o.frustumCulled = false;                       // bind-pose bounds do not follow the pose
+    o.castShadow = false;
+    o.receiveShadow = true;
+    for (const mat of (Array.isArray(o.material) ? o.material : [o.material])) {
+      if (mat.alphaTest > 0 && mat.name !== 'eye') mat.alphaToCoverage = true;     // soft edges where the target is multisampled
+      for (const slot of ['map', 'normalMap', 'metalnessMap', 'roughnessMap']) if (mat[slot]) mat[slot].anisotropy = 4;
+    }
+  });
+  return scene;
+}
+
 const FINGERS = ['thumb', 'index', 'middle', 'ring', 'pinky'];
 
 /** Extra curl, in radians, for each joint of each finger, on top of the relaxed rest hand. */
@@ -97,7 +121,7 @@ export class Character {
   _stand(def, gltf) {
     if (this.fig) this._release();
 
-    const scene = cloneSkinned(gltf.scene);
+    const scene = cloneSkinned(prepareFigureScene(gltf.scene));
     scene.name = 'figure-' + def.id;
     const bones = {};
     const meshes = [];
@@ -122,20 +146,12 @@ export class Character {
     // materials: a copy of the two we tint, so the cached model keeps its own
     const mats = {};
     for (const m of meshes) {
-      m.frustumCulled = false;                       // the bind-pose bounds do not follow the pose
-      m.castShadow = false;
-      m.receiveShadow = true;
       const mats1 = Array.isArray(m.material) ? m.material : [m.material];
       mats1.forEach((mat, i) => {
         if (mat.name === 'skin' || mat.name === 'hair' || mat.name === 'eye' || mat.name === 'brow') {
           const c = mat.clone();
           if (Array.isArray(m.material)) m.material[i] = c; else m.material = c;
           mats[mat.name] = c;
-          mat = c;
-        }
-        if (mat.alphaTest > 0 && mat.name !== 'eye') mat.alphaToCoverage = true;
-        for (const slot of ['map', 'normalMap', 'metalnessMap', 'roughnessMap']) {
-          if (mat[slot]) mat[slot].anisotropy = 4;
         }
       });
     }
@@ -218,7 +234,7 @@ export class Character {
       // the item is built fresh each time it is chosen, so it owns its geometry and materials
       this._handItem.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
-        if (o.material) for (const m of (Array.isArray(o.material) ? o.material : [o.material])) m.dispose();
+        if (o.material) for (const m of (Array.isArray(o.material) ? o.material : [o.material])) if (!m.userData.shared) m.dispose();
       });
       if (this._handItem.parent) this._handItem.parent.remove(this._handItem);
     }
@@ -236,8 +252,12 @@ export class Character {
   }
 
   _buildHandItem(item) {
+    const style = item && item.style !== 'none' ? item.style : null;
+    if (this._handItem && this._builtStyle === style && this._builtFor === this.fig) return;   // nothing to change
     this._removeItem();
-    if (!this.fig || !item || item.style === 'none') return;
+    this._builtStyle = style;
+    this._builtFor = this.fig;
+    if (!this.fig || !style) return;
     const built = buildItem(item.style);
     const holder = new THREE.Group();
     holder.name = 'holder';

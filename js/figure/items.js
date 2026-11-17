@@ -32,6 +32,20 @@ function slab(w, h, d, r, segs) {
   return geo;
 }
 
+
+/**
+ * Materials are made once and shared by every item that is built. A glass with a
+ * clearcoat is a MeshPhysicalMaterial, whose shader takes ~130 ms to compile, and
+ * three.js throws the compiled program away when the last material using it is
+ * disposed. Building a fresh material per item therefore cost that 130 ms every
+ * time the item was rebuilt. They are flagged so the figure leaves them alone.
+ */
+const _mat = {};
+function shared(key, make) {
+  if (!_mat[key]) { _mat[key] = make(); _mat[key].userData.shared = true; }
+  return _mat[key];
+}
+
 /** @returns {{group: THREE.Group, ember: THREE.Mesh|null, smoke: object|null}} */
 export function buildItem(style) {
   const group = new THREE.Group();
@@ -46,11 +60,11 @@ export function buildItem(style) {
   };
 
   if (style === 'wine') {
-    const glassMat = new THREE.MeshPhysicalMaterial({
+    const glassMat = shared('glass', () => new THREE.MeshPhysicalMaterial({
       color: 0xf2f6f6, roughness: 0.06, metalness: 0.0,
       transparent: true, opacity: 0.26, side: THREE.DoubleSide,
       depthWrite: false, clearcoat: 1.0, clearcoatRoughness: 0.04, ior: 1.5
-    });
+    }));
     const profile = [
       [0.0000, 0.000], [0.0340, 0.002], [0.0345, 0.008], [0.0060, 0.016],
       [0.0055, 0.070], [0.0090, 0.082], [0.0330, 0.098], [0.0400, 0.128],
@@ -59,25 +73,25 @@ export function buildItem(style) {
     put(new THREE.LatheGeometry(profile, 24), glassMat);
     const wine = put(
       new THREE.CylinderGeometry(0.0345, 0.0250, 0.030, 22),
-      new THREE.MeshPhysicalMaterial({ color: 0x5c1024, roughness: 0.16, transparent: true, opacity: 0.92, clearcoat: 0.7 })
+      shared('wine', () => new THREE.MeshPhysicalMaterial({ color: 0x5c1024, roughness: 0.16, transparent: true, opacity: 0.92, clearcoat: 0.7 }))
     );
     wine.position.y = 0.118 - 0.045;
 
   } else if (style === 'polaroid') {
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf0eee8, roughness: 0.42 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: 0x232427, roughness: 0.35 });
+    const bodyMat = shared('cam-body', () => new THREE.MeshStandardMaterial({ color: 0xf0eee8, roughness: 0.42 }));
+    const darkMat = shared('cam-dark', () => new THREE.MeshStandardMaterial({ color: 0x232427, roughness: 0.35 }));
     put(slab(0.115, 0.100, 0.062, 0.010, 3), bodyMat).position.y = 0.05;
     const lens = new THREE.CylinderGeometry(0.024, 0.028, 0.030, 20);
     lens.rotateX(Math.PI / 2);
     put(lens, darkMat).position.set(0.010, 0.046, -0.042);
     put(new THREE.TorusGeometry(0.0245, 0.004, 8, 20), darkMat).position.set(0.010, 0.046, -0.056);
     put(slab(0.026, 0.020, 0.012, 0.004, 2), darkMat).position.set(-0.038, 0.080, -0.034);
-    put(slab(0.086, 0.005, 0.010, 0.002, 2), new THREE.MeshStandardMaterial({ color: 0x1a1b1d, roughness: 0.6 }))
+    put(slab(0.086, 0.005, 0.010, 0.002, 2), shared('cam-strap', () => new THREE.MeshStandardMaterial({ color: 0x1a1b1d, roughness: 0.6 })))
       .position.set(0, -0.002, -0.020);
 
   } else if (style === 'cigarette') {
-    const paper = new THREE.MeshStandardMaterial({ color: 0xf4f1e8, roughness: 0.85 });
-    const filter = new THREE.MeshStandardMaterial({ color: 0xc08b4a, roughness: 0.9 });
+    const paper = shared('paper', () => new THREE.MeshStandardMaterial({ color: 0xf4f1e8, roughness: 0.85 }));
+    const filter = shared('filter', () => new THREE.MeshStandardMaterial({ color: 0xc08b4a, roughness: 0.9 }));
     const stick = new THREE.CylinderGeometry(0.0042, 0.0042, 0.062, 10);
     stick.rotateX(Math.PI / 2);
     put(stick, paper).position.set(0, 0, -0.018);

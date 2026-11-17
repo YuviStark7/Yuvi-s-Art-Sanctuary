@@ -70,5 +70,19 @@ check('a 144 Hz display is not throttled for running at 60+ fps', r.step === 0, 
   for (let i = 0; i < 4000; i++) { t += i % 150 === 0 ? 600 : 16.7; performance.now = () => t; g.frame(t); }
   check('an occasional hitch is not load', g.step === 0, `step ${g.step}`);
 }
+// a backgrounded or throttled tab delivers frames 130-500 ms apart: that is not a slow GPU
+{
+  const g = new Governor({ setScale() {}, setBloom() {}, setReflection() {}, setCanopy() {} }, { start: 0, key: 'test' });
+  let t = 0;
+  for (let i = 0; i < 3000; i++) { t += 130 + (i % 7) * 60; performance.now = () => t; g.frame(t); }
+  check('a throttled background tab is not mistaken for load', g.step === 0, `step ${g.step}`);
+}
+
+// a remembered step is capped, so one wrong lesson cannot park a machine at the floor
+{
+  globalThis.localStorage = { getItem: () => '5', setItem: () => {} };
+  const g = new Governor({ setScale() {}, setBloom() {}, setReflection() {}, setCanopy() {} }, { start: 0, key: 'test' });
+  check('a remembered step is capped', g.step <= 3, `starts at step ${g.step}`);
+}
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 process.exit(failed ? 1 : 0);

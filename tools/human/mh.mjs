@@ -5,7 +5,7 @@
  * MakeHuman's base mesh, rig, weights and targets are published CC0 (see
  * LICENSE.ASSETS.md in https://github.com/makehumancommunity/makehuman), which
  * is what makes it safe to ship a figure derived from them. The raw files are
- * fetched by tools/human/fetch.mjs into `3D Objects/makehuman-src/` — outside
+ * fetched by tools/human/fetch-base.mjs and fetch.mjs into `3D Objects/makehuman-src/` — outside
  * the published site — and everything the page loads is built from them offline.
  */
 import fs from 'fs';

@@ -188,9 +188,11 @@ Each is one skinned `.glb`, about 3.5 MB, built offline by
   fingers are kept, because a hand that holds a glass needs them.
 - Vertex data is quantized (`KHR_mesh_quantization`) and textures are WebP.
 
-The raw assets are fetched, not committed: `tools/human/fetch.mjs` pulls single
-files out of MakeHuman's 20-270 MB packs over HTTP range requests, so a few tens
-of MB come down instead of a gigabyte.
+The raw assets are fetched, not committed (`tools/human/fetch-base.mjs` for the base
+mesh, rig and targets; `tools/human/fetch.mjs` pulls single files out of MakeHuman's
+20-270 MB packs over HTTP range requests, so about a hundred MB come down instead of
+a gigabyte). That means the figures can only be rebuilt where those have been fetched:
+not from a bare checkout, and not by the scheduled routine.
 
 ### Adding a partner's tailoring
 
@@ -374,9 +376,18 @@ next visit starts there. It reads only frame intervals, so it works in every
 browser. `node tools/test-governor.mjs` runs it against a simulated slow, fast
 and recovering machine.
 
-Also static: bloom runs at half resolution (it is a soft glow), and every shader
-is compiled behind the loading screen so the first look into a chamber is not a
-half-second hitch.
+Choosing a quality yourself in the menu sets that preset as the ceiling and resets
+the governor to it; it only ever sheds from there.
+
+Also static: bloom runs at half resolution (it is a soft glow), and shaders are
+compiled behind the loading screen **against the composer's offscreen target**, which
+matters: the game draws there, where three.js uses linear output and no tone mapping,
+and a compile against the canvas builds programs that are never used (about 28 of
+them, and the reason the first look at anything cost a 100-300 ms frame). Measured
+after the fix: the first frames after boot take 3-4 ms, the first look into any part
+of the hall 3 ms or less, and switching figure or outfit in the wardrobe 15-19 ms
+(it was 160-330). The wardrobe also fetches the other figure and uploads its
+textures in the background on desktop-class machines.
 
 ---
 

@@ -80,8 +80,10 @@ by a man and a woman built from CC0 MakeHuman parts (`tools/human/`): modelled
 head and hands, real hair, brows and lashes, and tailored formal wear (white
 dinner jacket, navy suit; double-breasted suit, skirt suit). `js/character.js`
 loads them; the old figure is `js/character.procedural.js` and takes over if
-the model cannot be fetched. **Do not edit the `.glb` files by hand**: rebuild
-them with `node tools/human/build.mjs`.
+the model cannot be fetched. **Do not edit the `.glb` files by hand**, and do not try to
+rebuild them: the source assets are git-ignored, so a cloud checkout cannot run
+`tools/human/build.mjs` at all. Changes to the figures are made on a machine that
+has fetched them (see `tools/human/README.md`).
 
 ### Keep the frame rate smooth
 `js/governor.js` measures frame intervals and sheds cost in steps (resolution,
