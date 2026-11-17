@@ -353,6 +353,65 @@ export function mossTexture(opts) {
   return finish(c);
 }
 
+/* ---------------------------------------------------------- sun cookie -- */
+
+/**
+ * The shadow of a canopy that is out of sight above the openings: soft clumps of leaf shadow
+ * with a scatter of single leaves in them. Tiles, so it can be laid over any area. White is
+ * open sky and dark is leaf; the mean is about 0.8, and the shader scales for that.
+ */
+export function sunCookie(opts) {
+  opts = opts || {};
+  const size = opts.size || 256;
+  const rnd = mulberry32(opts.seed || 61);
+  const noise = makeNoise((opts.seed || 61) + 3);
+  const c = makeCanvas(size), ctx = readable(c);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, size, size);
+
+  // draw each blob at its wrapped copies too, so the tile has no seam
+  const blob = (x, y, rx, ry, rot, a) => {
+    for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) {
+      const px = x + ox, py = y + oy;
+      if (px < -rx * 2 || px > size + rx * 2 || py < -rx * 2 || py > size + rx * 2) continue;
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(rot);
+      ctx.scale(1, ry / rx);
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+      g.addColorStop(0, 'rgba(0,0,0,' + a + ')');
+      g.addColorStop(0.55, 'rgba(0,0,0,' + (a * 0.7) + ')');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(0, 0, rx, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  };
+
+  // clumps of foliage, where a low-frequency field says there is more of it
+  for (let i = 0; i < 140; i++) {
+    const x = rnd() * size, y = rnd() * size;
+    const dense = fbm(noise, x / size * 3, y / size * 3, 3, 3);
+    if (rnd() > dense * 1.25) continue;
+    blob(x, y, size * (0.035 + rnd() * 0.05), size * (0.03 + rnd() * 0.04), rnd() * 3.14, 0.34 + rnd() * 0.2);
+  }
+  // single leaves, small and darker
+  for (let i = 0; i < 700; i++) {
+    const x = rnd() * size, y = rnd() * size;
+    const dense = fbm(noise, x / size * 3, y / size * 3, 3, 3);
+    if (rnd() > dense * 1.5) continue;
+    blob(x, y, size * (0.012 + rnd() * 0.012), size * (0.006 + rnd() * 0.005), rnd() * 3.14, 0.55 + rnd() * 0.3);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.NoColorSpace;
+  t.anisotropy = 4;
+  t.needsUpdate = true;
+  return t;
+}
+
 /* ----------------------------------------------------------- sky / glow -- */
 
 /**

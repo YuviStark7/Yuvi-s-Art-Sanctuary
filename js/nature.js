@@ -72,17 +72,20 @@ function erode(geo, noise, amount, freq, squash) {
 
 /* -------------------------------------------------------------- island -- */
 
-export function buildIsland(textures, seed) {
+export function buildIsland(textures, seed, fernModel) {
   const group = new THREE.Group();
   group.name = 'island';
   const rnd = mulberry32(seed || 88);
   const noise = makeNoise3(seed || 88);
 
+  // the photograph is a 2 m square, graded to its own average; the generated rock leaned on the palette
+  const rockPhoto = !!textures.rock.photo;
+  if (rockPhoto) for (const t of [textures.rock.map, textures.rock.normalMap]) t.repeat.set(5, 2);
   const rockMat = new THREE.MeshStandardMaterial({
-    color: PALETTE.rock,
+    color: rockPhoto ? 0xd8d8d2 : PALETTE.rock,
     map: textures.rock.map,
     normalMap: textures.rock.normalMap,
-    normalScale: new THREE.Vector2(1.05, 1.05),
+    normalScale: rockPhoto ? new THREE.Vector2(1.4, 1.4) : new THREE.Vector2(1.05, 1.05),
     roughness: 0.94,
     metalness: 0.0
   });
@@ -159,6 +162,30 @@ export function buildIsland(textures, seed) {
   cap.castShadow = true;
   group.add(cap);
 
+  /* Where the rock really is. The mound is eroded, so its top is not the clean dome the planting
+   * used to assume, and anything placed by formula ends up buried or floating. Drop a ray onto
+   * the rock and plant where it lands, on ground that is not too steep to hold soil. */
+  group.updateMatrixWorld(true);
+  const rocks = group.children.filter((o) => o.isMesh && o.material === rockMat);
+  const caster = new THREE.Raycaster();
+  const aboveRock = new THREE.Vector3(), down = new THREE.Vector3(0, -1, 0), nrmW = new THREE.Vector3();
+  const surface = (x, z, minUp) => {
+    caster.set(aboveRock.set(x, 4, z), down);
+    const hit = caster.intersectObjects(rocks, false)[0];
+    if (!hit || hit.point.y < POOL.waterLevel + 0.12) return null;
+    nrmW.copy(hit.face.normal).transformDirection(hit.object.matrixWorld);
+    return nrmW.y >= minUp ? hit.point : null;
+  };
+  const plant = (radiusMax, radiusMin, minUp, rng) => {
+    for (let k = 0; k < 24; k++) {
+      const a = rng() * Math.PI * 2;
+      const d = radiusMin + rng() * (radiusMax - radiusMin);
+      const p = surface(Math.cos(a) * d, Math.sin(a) * d, minUp);
+      if (p) return p;
+    }
+    return null;
+  };
+
   /* low ground cover */
   const tuft = new THREE.PlaneGeometry(0.42, 0.34);
   const tuftMat = new THREE.MeshStandardMaterial({
@@ -172,12 +199,11 @@ export function buildIsland(textures, seed) {
   const tufts = new THREE.InstancedMesh(tuft, tuftMat, 190);
   const dummy = new THREE.Object3D();
   for (let i = 0; i < 190; i++) {
-    const a = rnd() * Math.PI * 2;
-    const d = Math.pow(rnd(), 0.6) * ISLAND.radius * 0.9;
-    const h = ISLAND.height * (1 - (d / (ISLAND.radius * 0.86)) ** 2 * 0.75);
-    dummy.position.set(Math.cos(a) * d, Math.max(POOL.waterLevel + 0.05, h) + 0.08, Math.sin(a) * d);
+    const p = plant(ISLAND.radius * 0.95, 0.3, 0.35, rnd);
+    if (!p) { dummy.scale.set(0, 0, 0); dummy.updateMatrix(); tufts.setMatrixAt(i, dummy.matrix); continue; }
+    dummy.position.set(p.x, p.y + 0.03, p.z);
     dummy.rotation.set((rnd() - 0.5) * 0.5, rnd() * Math.PI * 2, (rnd() - 0.5) * 0.4);
-    const s = 0.5 + rnd() * 0.9;
+    const s = 0.7 + rnd() * 1.0;
     dummy.scale.set(s, s, s);
     dummy.updateMatrix();
     tufts.setMatrixAt(i, dummy.matrix);
@@ -186,6 +212,33 @@ export function buildIsland(textures, seed) {
   tufts.castShadow = true;
   tufts.receiveShadow = true;
   group.add(tufts);
+
+  /* ferns: real fronds (Poly Haven fern_02), four variants scattered over the crown. About 2k
+   * triangles each and instanced, so the whole planting is a few hundred thousand fewer than
+   * the room's shell. The ground cover above stays under them. */
+  if (fernModel) {
+    const variants = [];
+    fernModel.scene.traverse((o) => { if (o.isMesh) variants.push(o); });
+    const perVariant = [7, 7, 6, 6];
+    const fr = mulberry32((seed || 88) + 11);
+    variants.forEach((src, vi) => {
+      const n = perVariant[vi % perVariant.length];
+      const inst = new THREE.InstancedMesh(src.geometry, src.material, n);
+      for (let i = 0; i < n; i++) {
+        const p = plant(ISLAND.radius * 0.92, 0.85, 0.6, fr) || { x: 0, y: -5, z: 0 };
+        dummy.position.set(p.x, p.y + 0.02, p.z);
+        dummy.rotation.set((fr() - 0.5) * 0.25, fr() * Math.PI * 2, (fr() - 0.5) * 0.25);
+        const sc = 0.5 + fr() * 0.35;
+        dummy.scale.set(sc, sc * (0.9 + fr() * 0.3), sc);
+        dummy.updateMatrix();
+        inst.setMatrixAt(i, dummy.matrix);
+      }
+      inst.instanceMatrix.needsUpdate = true;
+      inst.receiveShadow = true;
+      inst.frustumCulled = false;
+      group.add(inst);
+    });
+  }
 
   return { group, rockMat, mossMat, boulders };
 }

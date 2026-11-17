@@ -352,6 +352,28 @@ can be paused or deleted.
 
 ---
 
+## The room's surfaces
+
+The plaster of the walls, the polished concrete of the floor and the rock of the island
+are photographs, not noise. They are Poly Haven textures (CC0), fetched and prepared by
+[`tools/room/fetch.mjs`](tools/room/fetch.mjs) into `textures/*.webp`, and the ferns on the
+island come from [`tools/room/fern.mjs`](tools/room/fern.mjs) into `models/fern.glb`. Both
+scripts record the asset ids; running them again reproduces the same files. The page never
+reaches out to Poly Haven: it serves its own copies, and if one is missing it builds the old
+generated surface instead of failing.
+
+Each photograph is graded at build time to the average brightness the room's materials were
+tuned against, so swapping one in does not move the light of the whole hall. The wall also has its
+broad stains filtered out, because a photographed wall carries its own big blotches and a
+1 m tile of them lines up into bands across a dome; the shader supplies slow variation from the
+world position instead (no extra texture reads).
+
+Two effects ride on the surfaces, high and medium presets only:
+
+- **dappled sun** — the sun's pools on the floor are broken up by a tiling leaf cookie, as if
+  the light came through a canopy above the opening (`makeSunDapple`). One texture read.
+- **caustics** — the net of light on the basin's bed, from position and time (`makeCaustics`).
+
 ## Staying smooth
 
 The quality presets are a guess made before anyone's machine is known. On a
@@ -375,6 +397,12 @@ alone for a couple of minutes. The last step it settled on is remembered, so the
 next visit starts there. It reads only frame intervals, so it works in every
 browser. `node tools/test-governor.mjs` runs it against a simulated slow, fast
 and recovering machine.
+
+The surfaces above were added after those measurements. On the probe viewer (1280x960, GPU
+timer queries, medians of repeated runs, so a ratio rather than a frame time on your machine)
+they cost about 0.5-1.2 ms a frame at the default view, +15% of the room: the photographs'
+finer grain (the shell's texture reads are the same count as before), the dappled sun on the
+floor, the caustics and the ferns together. At low none of the effects are on.
 
 Choosing a quality yourself in the menu sets that preset as the ceiling and resets
 the governor to it; it only ever sheds from there.
@@ -418,10 +446,12 @@ js/
   audio.js          synthesised water and room tone
   ui.js             entrance, pause menu, the reading panel
   main.js           assembly and the frame loop
-models/             .glb models: the blossom tree and the two figures
+models/             .glb models: the blossom tree, the two figures, the fern
+textures/           the wall, floor and rock photographs (WebP, built by tools/room/)
 tools/              offline scripts: cutting a tree out of a pack, rigging a
                     figure, measuring one for limbs that clip the body
 tools/human/        builds the man and the woman from CC0 MakeHuman parts
+tools/room/         fetches the room's textures and the fern from Poly Haven (CC0)
 serve.mjs           tiny local preview server (not used by the published site)
 start.cmd / .sh     double-click to preview locally
 vendor/three/       three.js r185 (MIT), vendored so nothing is fetched at runtime
@@ -499,5 +529,11 @@ given here anyway because it is due:
 - the suits (`toigo_suit_with_dinner_jacket`, `toigo_male_suit_3`,
   `toigo_female_double-breasted_suit`, `toigo_female_suit`): Margaret Toigo
 - the blossom tree is cut from a tree pack by its original author
+
+The room's surfaces and the ferns are [Poly Haven](https://polyhaven.com) assets, also CC0
+(no credit asked, given anyway): `grey_plaster` (the walls), `concrete_floor_worn_001`
+(the floor; photography by Dimitrios Savva, processing by Rico Cilliers), `mossy_rock`
+(the island) and `fern_02` (the ferns) — the first, third and fourth by Rob Tuytel, the
+fern modelled by Rico Cilliers.
 
 Everything else is generated at runtime.
