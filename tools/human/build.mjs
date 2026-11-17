@@ -20,6 +20,9 @@ const ASSETS = path.join(SRC, 'assets');
 const SYS = path.join(ASSETS, 'makehuman_system_assets');
 const OUT = path.resolve('models');
 
+/** A skin path is relative to the system pack unless it names another pack's folder. */
+function skinRoot(p) { return p.startsWith('skins0') ? ASSETS : SYS; }
+
 /** Where each kind of proxy lives. A bare name means the system pack. */
 function mhcloPath(kind, name) {
   if (name.endsWith('.mhclo')) return path.join(ASSETS, name);
@@ -34,6 +37,7 @@ export async function buildCharacter(key) {
   const spec = Object.assign({}, CHARACTERS[key]);
   if (process.env.HAIR) spec.hair = process.env.HAIR;
   if (process.env.BROWS) spec.brows = process.env.BROWS;
+  if (process.env.SKIN) { spec.skin = process.env.SKIN; spec.skinNormal = process.env.SKINN || undefined; }
   const base = parseObj(path.join(SRC, 'base.obj'));
   const bodyGroup = base.groups.indexOf('body');
   const nV = base.pos.length / 3;
@@ -218,10 +222,13 @@ export async function buildCharacter(key) {
   const sceneNodes = [nodeOf[0]];
 
   // --- skin -----------------------------------------------------------------
-  const skinMat = material('skin', () => ({
-    name: 'skin',
-    pbrMetallicRoughness: { baseColorTexture: { index: tex(webp(path.join(SYS, spec.skin), { size: 2048, quality: 80 })) }, metallicFactor: 0, roughnessFactor: 0.62 }
-  }));
+  const skinMat = material('skin', () => {
+    const pbr = { baseColorTexture: { index: tex(webp(path.join(skinRoot(spec.skin), spec.skin), { size: 2048, quality: 82 })) }, metallicFactor: 0, roughnessFactor: 0.62 };
+    const out = { name: 'skin', pbrMetallicRoughness: pbr };
+    // a skin that ships a normal map gets its pores and creases
+    if (spec.skinNormal) out.normalTexture = { index: tex(webp(path.join(skinRoot(spec.skinNormal), spec.skinNormal), { size: 2048, quality: 88 })), scale: 0.8 };
+    return out;
+  });
   sceneNodes.push(meshNode('body', [prim(bodyMesh, per, skinMat)]));
 
   // --- eyes -----------------------------------------------------------------
@@ -271,7 +278,7 @@ export async function buildCharacter(key) {
   b.g.scenes[0].nodes = sceneNodes;
   b.g.asset.generator = 'stark-museo tools/human/build.mjs';
   // Tone is applied at runtime as a ratio against what the textures actually contain.
-  const skinBase = averageColour(path.join(SYS, spec.skin), { mask: 'body' });
+  const skinBase = averageColour(path.join(skinRoot(spec.skin), spec.skin), { mask: 'body' });
   const hairBase = averageColour(path.join(hair.mh.dir, parseMhmat(path.join(hair.mh.dir, hair.mh.material)).diffuseTexture), { alpha: true });
   b.g.asset.extras = { height: spec.height, bones: bones.length, anchors, skinBase, hairBase, source: 'MakeHuman CC0 base and system assets; suits by Margaret Toigo (CC0)' };
 
