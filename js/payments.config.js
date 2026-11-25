@@ -30,6 +30,12 @@ export const PAYMENTS = {
 
   currency: 'eur',
 
+  /** Load the wallet button as soon as a visitor walks in, so it is ready at the
+   *  water. Stripe is then contacted (and may set its fraud-prevention cookies)
+   *  for every visitor who enters, not only those who open the coin panel; say
+   *  so in the privacy and cookie pages. `false` waits for the panel. */
+  preloadWallet: true,
+
   /** Stripe publishable key. Safe to publish; starts pk_live_ or pk_test_. */
   stripePublishableKey: 'pk_test_51UfmQvGhIqVbiBIUn96Aie506QAzGZwArQTajwbNEz0fIwwv9JgTfjs1aX10ABYzCT5FCPoYbnz8yQ7fKuuplXuB00UEBfe8GE',
 
