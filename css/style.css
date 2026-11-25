@@ -674,6 +674,10 @@ kbd {
   transform: translateY(-1px);
 }
 .coin-btn:disabled { opacity: 0.4; cursor: default; }
+/* with a wallet button below, the price is a label and must not look tappable */
+div.coin-price, div.coin-price:hover { border-color: transparent; background: none; transform: none; padding-bottom: 6px; }
+.coin-wallet { min-height: 48px; margin-top: 10px; }
+.coin-wallet.hidden { display: none; }
 .coin-btn strong {
   display: block;
   font-family: var(--serif);

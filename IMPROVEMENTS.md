@@ -164,7 +164,7 @@ room with room to spare even from inside a chamber. (PR #1)
 - No build step, no npm dependencies, no CDN links. three.js stays vendored.
 - Respect the three quality presets. Anything expensive is off or reduced at low.
 - Never touch the brand placeholders in `js/wardrobe.js`, the keys in
-  `js/payments.config.js`, or anything in `supabase/` unless an item says so.
+  `js/payments.config.js`, or anything in `cloudflare/` unless an item says so.
 - Say plainly in the commit message what it could not verify, because it cannot
   see the render — and it is now merging that unverified work straight to the
   published site, so that note is the only warning anyone gets.

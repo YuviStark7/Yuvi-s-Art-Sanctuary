@@ -23,7 +23,7 @@ import { Ambience } from './audio.js';
 import { UI } from './ui.js';
 import { ARTWORKS, EXHIBITION } from './artworks.js';
 import { DEFAULT_OUTFIT, WARDROBE, FIGURES, figureById } from './wardrobe.js';
-import { PAYMENTS } from './payments.config.js';
+import { WISHING_COPY } from './payments.config.js';
 import { Governor } from './governor.js';
 
 /* ------------------------------------------------------------- quality -- */
@@ -72,6 +72,7 @@ const app = {
   wasLocked: false,
   splashTime: -1,
   pendingWish: null,
+  unmountWallet: null,
   wardrobeAngle: 0.35,
   wardrobeSpin: true
 };
@@ -511,31 +512,33 @@ function openCoinPanel() {
   if (app.mode !== 'visit' || ui.anyPanelOpen || !atTheWater()) return;
   player.enabled = false;
   ui.openCoin({
-    amounts: PAYMENTS.amounts,
+    amount: well.amount,
     format: (c) => well.format(c),
-    demo: !well.live,
-    note: ''
+    wallet: well.live,
+    notice: !well.live ? WISHING_COPY.demoNotice : well.testing ? WISHING_COPY.testNotice : '',
+    note: well.live ? WISHING_COPY.loading : ''
+  });
+  if (!well.live) return;
+
+  app.unmountWallet = well.mountWallet(ui.el.coinWallet, ui.el.coinGuard, {
+    ready: () => ui.setCoinStatus(''),
+    unavailable: (text) => ui.setCoinStatus(text, true),
+    busy: () => { ui.setCoinBusy(true); ui.setCoinStatus(WISHING_COPY.paying); },
+    paid: (paymentId) => throwCoin(paymentId, well.amount),
+    stopped: (text, bad) => { ui.setCoinBusy(false); ui.setCoinStatus(text, bad); }
   });
 }
 
+/** The demo coin; the real one is paid for through the wallet button above. */
 async function takeCoin(cents) {
   ui.setCoinBusy(true);
-  ui.setCoinStatus(well.live ? 'opening your wallet…' : 'pretending to open your wallet…');
+  ui.setCoinStatus('pretending to open your wallet…');
+  const result = await well.collect();
+  throwCoin(result.paymentId, cents);
+}
 
-  const result = await well.collect(cents);
-
-  if (!result.ok) {
-    ui.setCoinBusy(false);
-    ui.setCoinStatus(
-      result.reason === 'cancelled' ? 'No coin, then. Whenever you like.'
-      : result.reason === 'no-wallet' ? window.__wishNoWallet
-      : 'That did not go through. Nothing has been charged.',
-      result.reason !== 'cancelled'
-    );
-    return;
-  }
-
-  app.pendingWish = { paymentId: result.paymentId, amount: cents, thrown: false };
+function throwCoin(paymentId, cents) {
+  app.pendingWish = { paymentId, amount: cents, thrown: false };
   ui.closeCoin();
   player.enabled = true;
 
@@ -636,6 +639,7 @@ const ui = new UI({
   },
   onCoinPick: (cents) => takeCoin(cents),
   onCoinCancel: () => { player.enabled = true; },
+  onCoinClosed: () => { if (app.unmountWallet) { app.unmountWallet(); app.unmountWallet = null; } },
   onWishSend: (text) => sendWish(text),
   onWishSkip: () => { app.pendingWish = null; player.enabled = true; },
   onPanelOpen: () => { player.releaseLock(); },
@@ -659,7 +663,6 @@ const ui = new UI({
   onQuality: (name) => changeQuality(name)
 });
 
-window.__wishNoWallet = 'No Apple Pay or Google Pay here. Try it on your phone.';
 
 player.onInteract = () => {
   if (tour && tour.active) { stopTour(); return; }
