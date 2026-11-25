@@ -23,7 +23,7 @@ import { Ambience } from './audio.js';
 import { UI } from './ui.js';
 import { ARTWORKS, EXHIBITION } from './artworks.js';
 import { DEFAULT_OUTFIT, WARDROBE, FIGURES, figureById } from './wardrobe.js';
-import { WISHING_COPY } from './payments.config.js';
+import { PAYMENTS, WISHING_COPY } from './payments.config.js';
 import { Governor } from './governor.js';
 
 /* ------------------------------------------------------------- quality -- */
@@ -72,7 +72,6 @@ const app = {
   wasLocked: false,
   splashTime: -1,
   pendingWish: null,
-  unmountWallet: null,
   wardrobeAngle: 0.35,
   wardrobeSpin: true
 };
@@ -520,7 +519,7 @@ function openCoinPanel() {
   });
   if (!well.live) return;
 
-  app.unmountWallet = well.mountWallet(ui.el.coinWallet, ui.el.coinGuard, {
+  well.openWallet(ui.el.coinWallet, ui.el.coinGuard, {
     ready: () => ui.setCoinStatus(''),
     unavailable: (text) => ui.setCoinStatus(text, true),
     busy: () => { ui.setCoinBusy(true); ui.setCoinStatus(WISHING_COPY.paying); },
@@ -615,6 +614,7 @@ const ui = new UI({
     }
   },
   onEnter: () => {
+    if (PAYMENTS.preloadWallet) well.prepareWallet(ui.el.coinWallet, ui.el.coinGuard);
     app.mode = 'visit';
     player.enabled = true;
     player.position.set(0, 0, 11.4);
@@ -639,7 +639,7 @@ const ui = new UI({
   },
   onCoinPick: (cents) => takeCoin(cents),
   onCoinCancel: () => { player.enabled = true; },
-  onCoinClosed: () => { if (app.unmountWallet) { app.unmountWallet(); app.unmountWallet = null; } },
+  onCoinClosed: () => well.closeWallet(),
   onWishSend: (text) => sendWish(text),
   onWishSkip: () => { app.pendingWish = null; player.enabled = true; },
   onPanelOpen: () => { player.releaseLock(); },

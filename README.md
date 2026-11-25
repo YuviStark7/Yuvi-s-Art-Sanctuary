@@ -227,7 +227,9 @@ Cloudflare account. The short version:
   asks Stripe directly before a wish is recorded.
 - Only the words are kept, with the time and Stripe's payment id.
 - Stripe's script and Cloudflare's bot check are the only code loaded from
-  elsewhere, and only once a visitor opens the coin panel in live mode.
+  elsewhere, and only in live or test mode. With `preloadWallet` they load as a
+  visitor walks in, so the button is ready at the water; without it, when the coin
+  panel opens.
 
 The amount and the wording of every panel live in
 [`js/payments.config.js`](js/payments.config.js).

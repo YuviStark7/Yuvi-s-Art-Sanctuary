@@ -52,6 +52,7 @@ export class WishingWell {
       new URLSearchParams(window.location.search).get('coin') === 'test';
     this.mode = (PAYMENTS.mode === 'live' || trying) && this._configured() ? 'live' : 'demo';
     this.stripe = null;
+    this._wallet = null;      // the wallet button, kept ready between coins
   }
 
   _configured() {
@@ -81,6 +82,50 @@ export class WishingWell {
   async collect() {
     await new Promise((r) => setTimeout(r, 900));
     return { ok: true, paymentId: 'demo-' + Date.now(), demo: true };
+  }
+
+  /**
+   * Builds the wallet button ahead of time, out of sight in the closed coin panel, so it is
+   * already there when the panel opens. Does nothing in demo mode or if it is already built.
+   */
+  prepareWallet(box, guardBox) {
+    if (!this.live || this._wallet) return;
+    const w = this._wallet = { box, guardBox, state: 'loading', text: '', hooks: null, spent: false };
+    const tell = (name, ...args) => { if (w.hooks) w.hooks[name](...args); };
+    box.classList.remove('hidden');
+    w.down = this.mountWallet(box, guardBox, {
+      ready: () => { w.state = 'ready'; tell('ready'); },
+      unavailable: (text) => { w.state = 'unavailable'; w.text = text; tell('unavailable', text); },
+      busy: () => tell('busy'),
+      paid: (id) => { w.spent = true; tell('paid', id); },
+      stopped: (text, bad) => tell('stopped', text, bad)
+    });
+  }
+
+  /** The coin panel has opened: report to `hooks` (see mountWallet) from now until it closes. */
+  openWallet(box, guardBox, hooks) {
+    // something that failed to load earlier gets another try
+    if (this._wallet && this._wallet.text === WISHING_COPY.failed) this._dropWallet();
+    this.prepareWallet(box, guardBox);
+    const w = this._wallet;
+    w.hooks = hooks;
+    if (w.state === 'ready') hooks.ready();
+    else if (w.state === 'unavailable') hooks.unavailable(w.text);
+  }
+
+  /** The panel has closed. The button stays, unless it has just taken a payment. */
+  closeWallet() {
+    const w = this._wallet;
+    if (!w) return;
+    w.hooks = null;
+    if (!w.spent) return;
+    this._dropWallet();
+    this.prepareWallet(w.box, w.guardBox);       // a fresh one for the next coin
+  }
+
+  _dropWallet() {
+    if (this._wallet) this._wallet.down();
+    this._wallet = null;
   }
 
   /**
@@ -115,6 +160,8 @@ export class WishingWell {
         // wallets only: this is a coin, not a checkout
         paymentMethods: { link: 'never', paypal: 'never', klarna: 'never', amazonPay: 'never' },
         buttonHeight: 48,
+        // a coin needs no billing address, so the wallet sheet should not ask to send one
+        billingAddressRequired: false,
         // light buttons: the panel is nearly black and the default black buttons vanish into it
         buttonTheme: { applePay: 'white-outline', googlePay: 'white' }
       });
