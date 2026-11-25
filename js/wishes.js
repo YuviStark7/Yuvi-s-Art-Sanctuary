@@ -20,7 +20,10 @@
  */
 import { PAYMENTS, WISHING_COPY } from './payments.config.js';
 
-const STRIPE_JS = 'https://js.stripe.com/endive/stripe.js';
+// The button is loaded as a visitor walks in, before they have asked to pay, so Stripe's "advanced
+// fraud signals" are switched off: with them on, the script sets two cookies as it loads, which
+// would need consent. The cost is weaker fraud scoring; the bot check and rate limit stay.
+const STRIPE_JS = 'https://js.stripe.com/endive/stripe.js?advancedFraudSignals=false';
 const TURNSTILE_JS = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 const LOCAL_KEY = 'stark-museo-wishes';
 const WALLET_PATIENCE = 12000;    // ms to wait for Stripe to say which wallets there are
