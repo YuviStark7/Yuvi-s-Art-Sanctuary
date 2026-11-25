@@ -20,7 +20,9 @@
 
 export const PAYMENTS = {
 
-  /** 'demo' takes no money. 'live' uses Stripe (test or real, by the key). */
+  /** 'demo' takes no money. 'live' uses Stripe (test or real, by the key).
+   *  While the key below is a test key, adding ?coin=test to the site's address
+   *  tries the real wallet flow without changing what other visitors see. */
   mode: 'demo',
 
   /** What a coin costs, in cents. The Worker holds its own copy and wins. */
@@ -29,11 +31,10 @@ export const PAYMENTS = {
   currency: 'eur',
 
   /** Stripe publishable key. Safe to publish; starts pk_live_ or pk_test_. */
-  stripePublishableKey: '',
+  stripePublishableKey: 'pk_test_51UfmQvGhIqVbiBIUn96Aie506QAzGZwArQTajwbNEz0fIwwv9JgTfjs1aX10ABYzCT5FCPoYbnz8yQ7fKuuplXuB00UEBfe8GE',
 
-  /** Your deployed Worker, e.g.
-   *  https://museo-wishing-well.yourname.workers.dev */
-  endpoint: '',
+  /** The deployed Worker (cloudflare/wishing-well). */
+  endpoint: 'https://museo-wishing-well.yuvraj11argal.workers.dev',
 
   /** Cloudflare Turnstile site key (public). Required before real money: the
    *  Worker refuses a live Stripe key without the matching secret. */
