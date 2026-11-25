@@ -104,6 +104,9 @@ export class Player {
     const el = this.dom;
 
     this._onKeyDown = (e) => {
+      // someone writing is not walking: leave every key, the space bar above all, to the text box
+      const t = e.target;
+      if (t && t.matches && t.matches('textarea, input[type="text"], input[type="email"], [contenteditable="true"]')) return;
       this.keys[e.code] = true;
       if (e.code === 'KeyE' || e.code === 'Enter') { if (this.onInteract) this.onInteract(); }
       if (e.code === 'KeyG') { if (this.onUse) this.onUse(); }
