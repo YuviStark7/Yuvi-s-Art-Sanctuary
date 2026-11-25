@@ -11,7 +11,7 @@
 
   // database_id is printed by `npx wrangler d1 create museo-wishes`
   "d1_databases": [
-    { "binding": "DB", "database_name": "museo-wishes", "database_id": "REPLACE_WITH_DATABASE_ID" }
+    { "binding": "DB", "database_name": "museo-wishes", "database_id": "b0b340d0-d599-481d-a1f9-ce9c5bf81531" }
   ],
 
   // ten calls a minute from one address is plenty for a person and little use to a script
