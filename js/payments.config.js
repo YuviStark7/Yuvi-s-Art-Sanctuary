@@ -52,6 +52,7 @@ export const WISHING_COPY = {
   demoNotice: 'Demonstration only — no payment is taken and no card is charged.',
   testNotice: 'Test mode — no real money moves.',
   toss: 'toss',
+  price: 'one coin',
   loading: 'finding your wallet…',
   paying: 'a moment…',
   cancelled: 'No coin, then. Whenever you like.',

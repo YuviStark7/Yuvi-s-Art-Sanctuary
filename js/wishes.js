@@ -111,7 +111,9 @@ export class WishingWell {
       express = elements.create('expressCheckout', {
         // wallets only: this is a coin, not a checkout
         paymentMethods: { link: 'never', paypal: 'never', klarna: 'never', amazonPay: 'never' },
-        buttonHeight: 48
+        buttonHeight: 48,
+        // light buttons: the panel is nearly black and the default black buttons vanish into it
+        buttonTheme: { applePay: 'white-outline', googlePay: 'white' }
       });
 
       // fires on the first render and on any later change; undefined means no button will show

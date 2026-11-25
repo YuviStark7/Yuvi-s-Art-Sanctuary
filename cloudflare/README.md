@@ -88,14 +88,14 @@ With a `pk_test_` key the panel says **"Test mode — no real money moves."**
 The Worker only answers the origins listed in `ALLOWED_ORIGINS` in
 `wrangler.jsonc`. Add an origin there (and deploy again) if the site moves.
 
-## 3. Apple Pay needs the domain registered
+## 3. Register the domain for the wallets
 
-Apple Pay only appears on a domain you have registered, so it cannot be tried on
-`localhost`. In Stripe: **Settings → Payment method domains** → add
-`museo.yuvistark.com`, in test mode and again in live mode. If Stripe asks for a
-verification file, put it, unrenamed and with no extension, at
-`.well-known/apple-developer-merchantid-domain-association` in the root of this
-repository. Google Pay needs nothing extra.
+Apple Pay and Google Pay only appear on a domain you have registered, so neither
+can be tried on `localhost`. In Stripe: **Settings → Payment method domains** →
+add `museo.yuvistark.com`. Registering in live mode covers test mode as well. If
+Stripe asks for an Apple verification file, put it, unrenamed and with no
+extension, at `.well-known/apple-developer-merchantid-domain-association` in the
+root of this repository.
 
 ## 4. Before real money
 

@@ -381,7 +381,7 @@ export class UI {
     const amt = document.createElement('strong');
     amt.textContent = opts.format(opts.amount);
     const cap = document.createElement('span');
-    cap.textContent = WISHING_COPY.toss;
+    cap.textContent = opts.wallet ? WISHING_COPY.price : WISHING_COPY.toss;
     b.append(amt, cap);
     if (!opts.wallet) {
       b.type = 'button';
