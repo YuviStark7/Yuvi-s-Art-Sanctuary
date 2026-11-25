@@ -83,7 +83,9 @@ stripePublishableKey: 'pk_test_…',
 endpoint: 'https://museo-wishing-well.YOURNAME.workers.dev',
 ```
 
-With a `pk_test_` key the panel says **"Test mode — no real money moves."**
+With a `pk_test_` key you can leave `mode: 'demo'` and add `?coin=test` to the
+site's address: only that visit uses Stripe, and the panel says **"Test mode — no
+real money moves."** Everyone else still gets the demo coin.
 
 The Worker only answers the origins listed in `ALLOWED_ORIGINS` in
 `wrangler.jsonc`. Add an origin there (and deploy again) if the site moves.

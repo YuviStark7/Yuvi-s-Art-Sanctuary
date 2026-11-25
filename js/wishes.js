@@ -47,7 +47,10 @@ function loadScript(src, global) {
 
 export class WishingWell {
   constructor() {
-    this.mode = PAYMENTS.mode === 'live' && this._configured() ? 'live' : 'demo';
+    // ?coin=test opts one visitor into Stripe, and only ever with a test key: it cannot charge
+    const trying = PAYMENTS.stripePublishableKey.startsWith('pk_test_') &&
+      new URLSearchParams(window.location.search).get('coin') === 'test';
+    this.mode = (PAYMENTS.mode === 'live' || trying) && this._configured() ? 'live' : 'demo';
     this.stripe = null;
   }
 
