@@ -743,3 +743,17 @@ div.coin-price, div.coin-price:hover { border-color: transparent; background: no
   #touch-actions { bottom: 130px; right: 14px; }
   .tap { width: 62px; height: 62px; }
 }
+
+/* the way back to the artist's website */
+.home-link {
+  display: block;
+  width: max-content;
+  margin: 18px auto 0;
+  padding: 10px 14px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--paper-dim);
+  text-decoration: none;
+}
+.home-link:hover, .home-link:focus-visible { color: var(--paper); }
