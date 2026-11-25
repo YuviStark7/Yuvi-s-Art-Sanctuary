@@ -1,0 +1,53 @@
+# robots.txt for Stark Museo, the same rules as yuvistark.com
+#
+# Search engines and AI search assistants are welcome to index and cite this
+# site. AI model training crawlers are not. The artist expressly reserves text
+# and data mining rights under Directive (EU) 2019/790 art. 4(3) and Italian
+# Law no. 633/1941 art. 70-quater. See the Terms page at https://yuvistark.com/.
+
+User-agent: *
+Allow: /
+
+# ---- AI training crawlers: no ----------------------------------------------
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: Applebot-Extended
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: meta-externalagent
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: cohere-ai
+Disallow: /
+
+User-agent: cohere-training-data-crawler
+Disallow: /
+
+User-agent: Diffbot
+Disallow: /
+
+User-agent: omgili
+Disallow: /
+
+User-agent: img2dataset
+Disallow: /
+
+# AI search and user-requested fetches (OAI-SearchBot, ChatGPT-User,
+# Claude-SearchBot, Claude-User, PerplexityBot and similar) fall under the
+# default rule above and stay allowed, so assistants can find and cite the work.
