@@ -207,28 +207,29 @@ not from a bare checkout, and not by the scheduled routine.
 
 ## The coin in the water
 
-Walk to the pool's edge and a prompt offers a coin. Choose an amount, the
-figure throws, the water rings out from where it lands, and a box opens to
-write an anonymous wish. Coins settle on the basin floor and stay there, so
-the pool slowly fills.
+Walk to the pool's edge and a prompt offers a coin. The figure throws, the water
+rings out from where it lands, and a box opens to write an anonymous wish. Coins
+settle on the basin floor and stay there, so the pool slowly fills.
 
-**Out of the box this takes no money.** It runs in demo mode: everything
-works, the wish is saved in the visitor's own browser, and the panel says
-plainly that no card is charged.
+**Out of the box this takes no money.** It runs in demo mode: everything works,
+the wish is saved in the visitor's own browser, and the panel says plainly that
+no card is charged.
 
-To take real money — €1 and €2 through Apple Pay and Google Pay — follow
-[`supabase/README.md`](supabase/README.md). It needs a Stripe account and a
-Supabase project, and it is written to be followed start to finish. The short
-version:
+To take real money, a fixed €2 through Apple Pay or Google Pay, follow
+[`cloudflare/README.md`](cloudflare/README.md). It needs a Stripe account and a
+Cloudflare account. The short version:
 
-- Stripe's own sheet takes the card; your code never touches card details.
-- A Supabase edge function holds the only secret and is the only thing that
-  can write a wish.
-- **The browser is never believed about whether money changed hands.** The
-  function asks Stripe directly before a wish is recorded.
-- Wishes are anonymous: no name, no email, no session id. Only the words.
+- The wallet button is Apple's or Google's own; tapping it opens the phone's pay
+  sheet. Your code never touches card details.
+- A Cloudflare Worker holds the only secret and is the only thing that can write
+  a wish. It fixes the amount itself.
+- **The browser is never believed about whether money changed hands.** The Worker
+  asks Stripe directly before a wish is recorded.
+- Only the words are kept, with the time and Stripe's payment id.
+- Stripe's script and Cloudflare's bot check are the only code loaded from
+  elsewhere, and only once a visitor opens the coin panel in live mode.
 
-Amounts, currency and the wording of every panel live in
+The amount and the wording of every panel live in
 [`js/payments.config.js`](js/payments.config.js).
 
 ---
@@ -440,7 +441,7 @@ js/
   governor.js       measures frame time and sheds cost to keep it smooth
   coin.js           coins in flight, and the pile on the basin floor
   wishes.js         payment and the wish book
-  payments.config.js  ← Stripe and Supabase settings
+  payments.config.js  ← public Stripe and Cloudflare settings
   player.js         third-person movement, collision and the camera arm
   tour.js           the guided walk
   audio.js          synthesised water and room tone
@@ -455,7 +456,7 @@ tools/room/         fetches the room's textures and the fern from Poly Haven (CC
 serve.mjs           tiny local preview server (not used by the published site)
 start.cmd / .sh     double-click to preview locally
 vendor/three/       three.js r185 (MIT), vendored so nothing is fetched at runtime
-supabase/           schema and edge function for real payments
+cloudflare/         the payment Worker, its database schema, test and setup guide
 artworks/           your image files
 brands/             partner logos for chest prints (optional)
 ```

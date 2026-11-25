@@ -1,0 +1,21 @@
+{
+  // Deploy from this folder with `npx wrangler deploy`; see ../README.md.
+  "name": "museo-wishing-well",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-01",
+
+  "vars": {
+    // Only these sites may call the Worker.
+    "ALLOWED_ORIGINS": "https://museo.yuvistark.com,https://yuvistark7.github.io"
+  },
+
+  // database_id is printed by `npx wrangler d1 create museo-wishes`
+  "d1_databases": [
+    { "binding": "DB", "database_name": "museo-wishes", "database_id": "REPLACE_WITH_DATABASE_ID" }
+  ],
+
+  // ten calls a minute from one address is plenty for a person and little use to a script
+  "ratelimits": [
+    { "name": "LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }
+  ]
+}

@@ -674,6 +674,9 @@ kbd {
   transform: translateY(-1px);
 }
 .coin-btn:disabled { opacity: 0.4; cursor: default; }
+div.coin-price:hover { border-color: var(--line); background: rgba(230, 226, 217, 0.05); transform: none; }
+.coin-wallet { min-height: 48px; margin-top: 10px; }
+.coin-wallet.hidden { display: none; }
 .coin-btn strong {
   display: block;
   font-family: var(--serif);

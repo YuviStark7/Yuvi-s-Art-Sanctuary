@@ -25,6 +25,7 @@ export class UI {
     this.gateOpen = true;
     this.wardrobeOpen = false;
     this.coinOpen = false;
+    this.coinBusy = false;      // a payment is in flight: the panel may not be closed
     this.wishOpen = false;
 
     this.el = {
@@ -45,6 +46,7 @@ export class UI {
       coin: $('coin'), coinTitle: $('coin-title'), coinIntro: $('coin-intro'),
       coinDemo: $('coin-demo'), coinAmounts: $('coin-amounts'),
       coinStatus: $('coin-status'), coinCancel: $('coin-cancel'),
+      coinWallet: $('coin-wallet'), coinGuard: $('coin-guard'),
 
       wish: $('wish'), wishTitle: $('wish-title'), wishIntro: $('wish-intro'),
       wishText: $('wish-text'), wishCount: $('wish-count'),
@@ -99,10 +101,13 @@ export class UI {
     e.invert.addEventListener('change', () => { if (h.onInvert) h.onInvert(e.invert.checked); });
 
     /* ---- coin ---- */
-    e.coinCancel.addEventListener('click', () => { this.closeCoin(); if (h.onCoinCancel) h.onCoinCancel(); });
-    e.coin.addEventListener('click', (ev) => {
-      if (ev.target === e.coin) { this.closeCoin(); if (h.onCoinCancel) h.onCoinCancel(); }
-    });
+    const dismissCoin = () => {
+      if (this.coinBusy) return;
+      this.closeCoin();
+      if (h.onCoinCancel) h.onCoinCancel();
+    };
+    e.coinCancel.addEventListener('click', dismissCoin);
+    e.coin.addEventListener('click', (ev) => { if (ev.target === e.coin) dismissCoin(); });
 
     /* ---- wish ---- */
     e.wishText.addEventListener('input', () => {
@@ -126,7 +131,7 @@ export class UI {
     window.addEventListener('keydown', (ev) => {
       if (ev.code !== 'Escape') return;
       if (this.wishOpen) { this.closeWish(); if (h.onWishSkip) h.onWishSkip(); ev.preventDefault(); }
-      else if (this.coinOpen) { this.closeCoin(); if (h.onCoinCancel) h.onCoinCancel(); ev.preventDefault(); }
+      else if (this.coinOpen) { dismissCoin(); ev.preventDefault(); }
       else if (this.viewerOpen) { this.closeViewer(); ev.preventDefault(); }
     });
   }
@@ -358,30 +363,32 @@ export class UI {
 
   /* --------------------------------------------------------------- coin */
 
+  /** opts: { amount, format, wallet, notice, note }. With `wallet`, the Apple Pay / Google
+   *  Pay button is mounted into `el.coinWallet` by the caller; without it, a demo button. */
   openCoin(opts) {
     const e = this.el;
     e.coinTitle.textContent = WISHING_COPY.title;
     e.coinIntro.textContent = WISHING_COPY.intro;
-    e.coinDemo.textContent = WISHING_COPY.demoNotice;
-    e.coinDemo.classList.toggle('hidden', !opts.demo);
+    e.coinDemo.textContent = opts.notice || '';
+    e.coinDemo.classList.toggle('hidden', !opts.notice);
     e.coinStatus.textContent = opts.note || '';
     e.coinStatus.classList.remove('bad');
 
+    // one coin, one price. With a wallet the amount is a label above the wallet's own button.
     e.coinAmounts.textContent = '';
-    for (const cents of opts.amounts) {
-      const b = document.createElement('button');
+    const b = document.createElement(opts.wallet ? 'div' : 'button');
+    b.className = opts.wallet ? 'coin-btn coin-price' : 'coin-btn';
+    const amt = document.createElement('strong');
+    amt.textContent = opts.format(opts.amount);
+    const cap = document.createElement('span');
+    cap.textContent = WISHING_COPY.toss;
+    b.append(amt, cap);
+    if (!opts.wallet) {
       b.type = 'button';
-      b.className = 'coin-btn';
-      const amt = document.createElement('strong');
-      amt.textContent = opts.format(cents);
-      const cap = document.createElement('span');
-      cap.textContent = 'toss';
-      b.append(amt, cap);
-      b.addEventListener('click', () => {
-        if (this.h.onCoinPick) this.h.onCoinPick(cents);
-      });
-      e.coinAmounts.appendChild(b);
+      b.addEventListener('click', () => { if (this.h.onCoinPick) this.h.onCoinPick(opts.amount); });
     }
+    e.coinAmounts.appendChild(b);
+    e.coinWallet.classList.toggle('hidden', !opts.wallet);
 
     this.coinOpen = true;
     e.coin.classList.remove('hidden');
@@ -396,6 +403,7 @@ export class UI {
   }
 
   setCoinBusy(busy) {
+    this.coinBusy = !!busy;
     for (const b of this.el.coinAmounts.querySelectorAll('button')) b.disabled = !!busy;
     this.el.coinCancel.disabled = !!busy;
   }
@@ -405,6 +413,7 @@ export class UI {
     this.coinOpen = false;
     this.el.coin.classList.add('hidden');
     this.setCoinBusy(false);
+    if (this.h.onCoinClosed) this.h.onCoinClosed();
     if (!this.wishOpen) this.el.hud.classList.remove('hidden');
   }
 
