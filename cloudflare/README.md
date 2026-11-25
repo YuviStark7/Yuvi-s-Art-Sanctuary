@@ -112,8 +112,9 @@ root of this repository.
    payment address is otherwise used to test stolen cards.
 2. Replace both Stripe keys with the live ones (`pk_live_…` in the config,
    `sk_live_…` with `wrangler secret put STRIPE_SECRET_KEY`).
-3. Update the privacy and cookie pages on yuvistark.com to name Stripe and
-   Cloudflare.
+3. Publish the privacy and cookie pages on yuvistark.com that name Stripe and
+   Cloudflare. They say Stripe sets no cookies as it loads, which holds only
+   while `js/wishes.js` loads it with `advancedFraudSignals=false`.
 4. Pay one real coin from your own phone, then refund it in Stripe.
 
 ## Reading the wishes
