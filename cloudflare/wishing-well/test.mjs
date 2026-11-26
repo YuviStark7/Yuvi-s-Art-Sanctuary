@@ -31,7 +31,11 @@ const intents = {
 let sent = null;
 globalThis.fetch = async (url, init) => {
   const u = String(url);
-  if (u.includes('siteverify')) return Response.json({ success: init.body.get('response') === 'person' });
+  if (u.includes('siteverify')) {
+    const token = init.body.get('response');
+    return Response.json({ success: token === 'person' || token === 'elsewhere',
+                           hostname: token === 'person' ? 'museo.yuvistark.com' : 'evil.example' });
+  }
   if (u.endsWith('/payment_intents') && init.method === 'POST') {
     sent = Object.fromEntries(new URLSearchParams(init.body));
     return Response.json({ id: 'pi_new', client_secret: 'pi_new_secret' });
@@ -70,6 +74,8 @@ assert.equal(r.status, 503, 'a live key without a bot check refuses to run');
 const guarded = { ...base, STRIPE_SECRET_KEY: 'sk_live_x', TURNSTILE_SECRET: 's' };
 assert.equal((await call({ action: 'intent' }, { env: guarded })).status, 403);
 assert.equal((await call({ action: 'intent', turnstile: 'bot' }, { env: guarded })).status, 403);
+assert.equal((await call({ action: 'intent', turnstile: 'elsewhere' }, { env: guarded })).status, 403,
+  'a token earned on another site is refused');
 assert.equal((await call({ action: 'intent', turnstile: 'person' }, { env: guarded })).status, 200);
 
 for (const id of ['pi_unpaid', 'pi_other', 'pi_cheap']) {

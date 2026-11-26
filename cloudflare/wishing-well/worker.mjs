@@ -51,15 +51,16 @@ async function stripe(env, path, method, form) {
   return data;
 }
 
-/** Turnstile, Cloudflare's check that a person and not a script is asking. */
-async function isPerson(env, token) {
+/** Turnstile, Cloudflare's check that a person and not a script is asking. The token must have
+ *  been earned on the site that is calling, not collected somewhere else with our public key. */
+async function isPerson(env, token, origin) {
   if (!token) return false;
   const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
     method: 'POST',
     body: new URLSearchParams({ secret: env.TURNSTILE_SECRET, response: String(token) })
   });
   const data = await res.json();
-  return data.success === true;
+  return data.success === true && data.hostname === new URL(origin).hostname;
 }
 
 export default {
@@ -97,7 +98,7 @@ export default {
 
     try {
       if (body.action === 'intent') {
-        if (env.TURNSTILE_SECRET && !(await isPerson(env, body.turnstile))) {
+        if (env.TURNSTILE_SECRET && !(await isPerson(env, body.turnstile, origin))) {
           return json({ error: 'Could not confirm you are a person. Try again.' }, 403);
         }
         const pi = await stripe(env, 'payment_intents', 'POST', {

@@ -98,6 +98,7 @@ export class WishingWell {
     box.classList.remove('hidden');
     w.down = this.mountWallet(box, guardBox, {
       ready: () => { w.state = 'ready'; tell('ready'); },
+      checking: () => { w.state = 'checking'; tell('checking'); },
       unavailable: (text) => { w.state = 'unavailable'; w.text = text; tell('unavailable', text); },
       busy: () => tell('busy'),
       paid: (id) => { w.spent = true; tell('paid', id); },
@@ -113,6 +114,7 @@ export class WishingWell {
     const w = this._wallet;
     w.hooks = hooks;
     if (w.state === 'ready') hooks.ready();
+    else if (w.state === 'checking') hooks.checking();
     else if (w.state === 'unavailable') hooks.unavailable(w.text);
   }
 
@@ -135,6 +137,7 @@ export class WishingWell {
    * Puts the Apple Pay / Google Pay button into `box`.
    *
    * hooks: ready()            a wallet button is showing
+   *        checking()         there is one, hidden until the bot check has passed
    *        unavailable(text)  there will be no button
    *        busy()             the visitor has approved; do not close the panel
    *        paid(paymentId)    the money moved
@@ -144,13 +147,31 @@ export class WishingWell {
    */
   mountWallet(box, guardBox, hooks) {
     let gone = false, express = null, widget = null, patience = 0;
-    const check = this._botCheck(guardBox, (id) => { widget = id; }, () => gone);
+    let walletUp = false, announced = false, check = null;
 
     const unavailable = (text) => {
       if (gone) return;
       clearTimeout(patience);
       hooks.unavailable(text);
     };
+
+    // The wallet button is shown only once the bot check has passed. If the check wants a tap, the
+    // visitor can give it now; behind an open pay sheet they could not.
+    const report = () => {
+      if (gone || !check) return;
+      const person = check.passed();
+      box.style.visibility = person ? '' : 'hidden';
+      if (!walletUp || announced) return;
+      if (person) { announced = true; hooks.ready(); }
+      else hooks.checking();
+    };
+    check = this._botCheck(guardBox, {
+      remember: (id) => { widget = id; },
+      isGone: () => gone,
+      changed: report,
+      failed: () => unavailable(WISHING_COPY.failed)
+    });
+    report();
 
     (async () => {
       const Stripe = await loadScript(STRIPE_JS, 'Stripe');
@@ -174,7 +195,8 @@ export class WishingWell {
         if (gone) return;
         if (paymentMethods && Object.values(paymentMethods).some((m) => m && m.available)) {
           clearTimeout(patience);
-          hooks.ready();
+          walletUp = true;
+          report();
         } else unavailable(WISHING_COPY.noWallet);
       });
       express.on('loaderror', () => unavailable(WISHING_COPY.failed));
@@ -229,16 +251,17 @@ export class WishingWell {
       if (express) { try { express.destroy(); } catch (e) { /* already gone */ } }
       if (widget !== null && window.turnstile) window.turnstile.remove(widget);
       box.textContent = '';
+      box.style.visibility = '';
       guardBox.textContent = '';
     };
   }
 
   /** Turnstile, if a site key is set: invisible unless it wants a person to click. */
-  _botCheck(box, remember, isGone) {
-    if (!PAYMENTS.turnstileSiteKey) return { token: async () => '', reset: () => {} };
+  _botCheck(box, { remember, isGone, changed, failed }) {
+    if (!PAYMENTS.turnstileSiteKey) return { passed: () => true, token: async () => '', reset: () => {} };
 
     let value = '', waiting = [], id = null;
-    const settle = (t) => { value = t; if (t) waiting.splice(0).forEach((w) => w(t)); };
+    const settle = (t) => { value = t; if (t) waiting.splice(0).forEach((w) => w(t)); changed(); };
 
     loadScript(TURNSTILE_JS, 'turnstile').then((turnstile) => {
       if (isGone()) return;
@@ -246,18 +269,20 @@ export class WishingWell {
         sitekey: PAYMENTS.turnstileSiteKey,
         appearance: 'interaction-only',
         callback: settle,
-        'expired-callback': () => settle('')
+        'expired-callback': () => settle(''),
+        'error-callback': () => { failed(); return true; }
       });
       remember(id);
-    }).catch((err) => console.warn('[Stark Museo]', err.message));
+    }).catch((err) => { console.warn('[Stark Museo]', err.message); failed(); });
 
     return {
+      passed: () => !!value,
       token: () => value ? Promise.resolve(value) : new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('the bot check did not answer')), CHECK_PATIENCE);
         waiting.push((t) => { clearTimeout(timer); resolve(t); });
       }),
       // a token is good for one payment
-      reset: () => { value = ''; if (!isGone() && id !== null) window.turnstile.reset(id); }
+      reset: () => { if (!isGone() && id !== null) { settle(''); window.turnstile.reset(id); } }
     };
   }
 

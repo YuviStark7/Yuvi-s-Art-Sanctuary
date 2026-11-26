@@ -521,6 +521,7 @@ function openCoinPanel() {
 
   well.openWallet(ui.el.coinWallet, ui.el.coinGuard, {
     ready: () => ui.setCoinStatus(''),
+    checking: () => ui.setCoinStatus(WISHING_COPY.checking),
     unavailable: (text) => ui.setCoinStatus(text, true),
     busy: () => { ui.setCoinBusy(true); ui.setCoinStatus(WISHING_COPY.paying); },
     paid: (paymentId) => throwCoin(paymentId, well.amount),
