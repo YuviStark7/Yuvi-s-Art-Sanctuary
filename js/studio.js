@@ -5,7 +5,8 @@
  * metres to the right of the room's axis, above the floor, and beyond the hall's wall.
  */
 import * as THREE from 'three';
-import { buildDesk } from './desk.js';
+import { buildDesk, TOP } from './desk.js';
+import { buildCyborg } from './cyborg.js';
 
 const GLOW = new THREE.Color(1.0, 0.62, 0.30);
 
@@ -89,9 +90,9 @@ export function buildStudio(chamber, textures, quality) {
       mesh.lookAt(camera.position);
       cards.add(mesh);
     };
-    card(0, 3.5, spec.desk - 1.2, 4.5, 0.5, 3.0);       // a strip overhead
-    card(-3.2, 1.7, spec.desk - 2.2, 0.5, 2.2, 2.2);    // one upright to each side, out front
-    card(3.2, 1.7, spec.desk - 2.2, 0.5, 2.2, 1.4);
+    card(0, 3.5, spec.desk - 1.2, 4.5, 0.5, 1.25);       // a strip overhead
+    card(-3.2, 1.7, spec.desk - 2.2, 0.5, 2.2, 1.05);    // one upright to each side, out front
+    card(3.2, 1.7, spec.desk - 2.2, 0.5, 2.2, 0.75);
     card(0, 0.25, spec.desk - 2.8, 6.0, 0.35, 0.9);     // the bright hall's floor, low down
     scene.add(cards);
 
@@ -110,9 +111,27 @@ export function buildStudio(chamber, textures, quality) {
       material.envMap = probe.texture;
       material.needsUpdate = true;
     }
-    desk.reflective.forEach((m) => { m.envMapIntensity = 1.5; });
+    desk.reflective.forEach((m) => { m.envMapIntensity = 2.2; });
     renderer.shadowMap.needsUpdate = true;
   };
 
-  return { group, lights, animated: desk.animated, capture, dispose: () => probe && probe.dispose() };
+  /* ---- her: loaded after the room is open, so the loading screen is no longer for her ---- */
+  const studio = {
+    group, lights, animated: desk.animated, capture, dj: null, gone: false,
+    heartAt: at(0, 1.35, spec.desk + 0.5),
+    chamber,
+    async arrive() {
+      const dj = await buildCyborg(chamber, probe.texture, TOP);
+      if (studio.gone) { dj.dispose(); return; }          // the room was rebuilt while she loaded
+      studio.dj = dj;
+      group.add(dj.group);
+    },
+    update(t) { if (studio.dj) studio.dj.update(t); },
+    dispose() {
+      studio.gone = true;
+      if (studio.dj) { studio.dj.group.removeFromParent(); studio.dj.dispose(); }
+      if (probe) probe.dispose();
+    }
+  };
+  return studio;
 }

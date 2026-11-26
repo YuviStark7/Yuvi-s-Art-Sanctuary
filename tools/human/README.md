@@ -14,6 +14,13 @@ node tools/human/build.mjs male
 node tools/human/build.mjs female
 ```
 
+The DJ in the side room is built the same way, with her own script (needs `eyebrow008`,
+`eyelashes02` and `ponytail01` from the system pack):
+
+```bash
+node tools/human/cyborg.mjs        # writes models/figure-cyborg.glb
+```
+
 **The figures cannot be rebuilt from a bare checkout**, nor by the scheduled cloud
 routine: the sources above are git-ignored (they are large and not ours to
 republish), so rebuilding means running step 1 first. The built `.glb`s in

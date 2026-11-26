@@ -9,10 +9,11 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeTriplanar } from './architecture.js';
+import { tame } from './cyborg.js';
 
 const WARM = new THREE.Color(1.0, 0.64, 0.32);
 const HALF = 2.35;                       // half the length of the desk
-const TOP = 1.08;                        // height of the playing surface
+export const TOP = 1.08;                 // height of the playing surface
 
 /* ------------------------------------------------------------ materials -- */
 
@@ -125,8 +126,8 @@ function boulder(sx, sy, sz, seed) {
 /* -------------------------------------------------------- the decks -- */
 
 function addDecks(group, at, desk, turn) {
-  const body = new THREE.MeshStandardMaterial({ color: 0x15130f, roughness: 0.38, metalness: 0.6 });
-  const wheel = new THREE.MeshStandardMaterial({ color: 0x8d857b, roughness: 0.28, metalness: 1.0 });
+  const body = tame(new THREE.MeshStandardMaterial({ color: 0x15130f, roughness: 0.38, metalness: 0.6 }));
+  const wheel = tame(new THREE.MeshStandardMaterial({ color: 0x8d857b, roughness: 0.28, metalness: 1.0 }));
   const glow = new THREE.MeshBasicMaterial({ color: WARM.clone().multiplyScalar(2.2), toneMapped: false });
   const screen = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.55, 0.75, 1.0), toneMapped: false });
 
@@ -139,7 +140,7 @@ function addDecks(group, at, desk, turn) {
   const surface = TOP + 0.035;
   const f = desk + 0.02;
   // local x of a turned object points to the visitor's right, local +z toward the visitor
-  for (const side of [-0.66, 0.66]) {
+  for (const side of [-0.55, 0.55]) {
     place(new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.06, 0.46), body), side, surface + 0.03, f).castShadow = true;
     place(new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.15, 0.028, 40), wheel), side, surface + 0.072, f + 0.04);
     place(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.012, 24), body), side, surface + 0.09, f + 0.04);
@@ -316,9 +317,9 @@ export function buildDesk(chamber, textures) {
   const turn = Math.atan2(-chamber.forward.x, -chamber.forward.z);
   const animated = [];
 
-  const metal = new THREE.MeshStandardMaterial({
+  const metal = tame(new THREE.MeshStandardMaterial({
     color: 0xd9d6d2, metalness: 1.0, roughness: 0.46, roughnessMap: brushed(), side: THREE.DoubleSide
-  });
+  }), 1.6);
   const slab = new THREE.Mesh(slabGeometry(at, desk), metal);
   slab.castShadow = slab.receiveShadow = true;
   group.add(slab);

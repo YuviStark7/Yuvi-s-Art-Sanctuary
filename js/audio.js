@@ -11,10 +11,13 @@ import * as THREE from 'three';
 /** How loud the water is (the falling curtain and its drips) beside everything else. */
 const WATER = 0.6;
 
+const BEAT = 60 / 64;       // seconds per heartbeat; the same as the figure's, in cyborg.js
+
 export class Ambience {
   constructor() {
     this.ctx = null;
     this.started = false;
+    this.beating = false;
     this.volume = 0.55;
     this.nodes = {};
     this._dripTimer = null;
@@ -152,6 +155,65 @@ export class Ambience {
       L.setPosition(p.x, p.y, p.z);
       L.setOrientation(f.x, f.y, f.z, 0, 1, 0);
     }
+  }
+
+  /* ------------------------------------------------------------ heartbeat */
+
+  /**
+   * Her heart, heard from where she stands. Off until a visitor asks for it.
+   * `phase` is how far the picture is into its current beat, so the two keep time.
+   */
+  heartbeat(on, at, phase) {
+    this.beating = !!(on && this.ctx);
+    clearTimeout(this._heartTimer);
+    if (!this.beating) {
+      if (this._heartOut) this._heartOut.disconnect();
+      this._heartOut = null;
+      return;
+    }
+    const ctx = this.ctx;
+    this.resume();
+
+    const panner = ctx.createPanner();
+    panner.panningModel = 'HRTF';
+    panner.distanceModel = 'inverse';
+    panner.refDistance = 2.6;
+    panner.rolloffFactor = 1.1;
+    if (panner.positionX) {
+      panner.positionX.value = at.x; panner.positionY.value = at.y; panner.positionZ.value = at.z;
+    } else panner.setPosition(at.x, at.y, at.z);
+    panner.connect(this.nodes.master);
+    this._heartOut = panner;
+
+    // a thump: a falling sine, with an octave above it so small phone speakers can carry it
+    const thump = (when, freq, gain) => {
+      for (const [mult, level] of [[1, 1], [2.1, 0.45]]) {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.frequency.setValueAtTime(freq * mult * 1.5, when);
+        osc.frequency.exponentialRampToValueAtTime(freq * mult * 0.8, when + 0.13);
+        g.gain.setValueAtTime(0.0001, when);
+        g.gain.exponentialRampToValueAtTime(gain * level, when + 0.014);
+        g.gain.exponentialRampToValueAtTime(0.0001, when + 0.2);
+        osc.connect(g).connect(panner);
+        osc.start(when);
+        osc.stop(when + 0.24);
+      }
+    };
+
+    let next = ctx.currentTime + (BEAT - (phase || 0)) + BEAT * 0.06;
+    const schedule = () => {
+      if (!this.beating) return;
+      // a tab that slept would otherwise play every missed beat at once
+      if (next < ctx.currentTime) next = ctx.currentTime + 0.05;
+      while (next < ctx.currentTime + 1.2) {
+        thump(next, 54, 0.62);
+        thump(next + BEAT * 0.28, 66, 0.40);
+        next += BEAT;
+      }
+      this._heartTimer = setTimeout(schedule, 400);
+    };
+    schedule();
   }
 
   /* ------------------------------------------------------------ one-shots */

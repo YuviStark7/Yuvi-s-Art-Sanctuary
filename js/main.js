@@ -15,6 +15,7 @@ import { buildIsland, buildTree, buildImportedTree } from './nature.js';
 import { loadModel, modelTextures } from './models.js';
 import { buildGallery, loadArtworkTextures } from './gallery.js';
 import { buildStudio } from './studio.js';
+import { BEAT } from './cyborg.js';
 import { loadShopWorks, loadShopTextures } from './shop.js';
 import { Player } from './player.js';
 import { Character, prepareFigureScene } from './character.js';
@@ -253,6 +254,9 @@ function disposeWorld() {
   const keep = sharedTextures();
   const seen = new Set();
 
+  // she goes first: her geometry is cached for the next build and must not be disposed with the room
+  for (const studio of app.world.studios || []) studio.dispose();
+
   app.world.root.traverse((o) => {
     if (o.isReflector && o.dispose) o.dispose();
     if (o.isLight && o.shadow && o.shadow.dispose) o.shadow.dispose();
@@ -285,7 +289,6 @@ function disposeWorld() {
 
   scene.remove(app.world.root);
   if (app.world.envTarget) app.world.envTarget.dispose();
-  for (const studio of app.world.studios || []) studio.dispose();
   scene.environment = null;
   app.world = null;
   app.animated = [];
@@ -399,6 +402,9 @@ function buildWorld(quality) {
   // after the hall's own capture, so the warm room is seen lit as visitors will see it
   for (const studio of studios) studio.capture(renderer, scene);
   app.world.studios = studios;
+  for (const studio of studios) {
+    studio.arrive().catch((err) => console.warn('[Stark Museo] the DJ could not be loaded:', err.message));
+  }
   renderer.shadowMap.needsUpdate = true;
 
   tour = new Tour(player, defaultStops(gallery.interactables, rimY));
@@ -500,10 +506,23 @@ function updatePrompts() {
 
   const list = [];
   if (best) list.push({ key: 'E', label: 'look closely' });
+  else if (nearHer()) list.push({ key: 'E', label: ambience.beating ? 'quiet her heart' : 'hear her heart' });
   if (atTheWater()) list.push({ key: 'F', label: 'toss a coin', kind: 'coin' });
   const verb = character && character.handVerb;
   if (verb && !character.busy) list.push({ key: 'G', label: verb });
   ui.setPrompts(list);
+}
+
+/** Standing in front of her desk: close enough to hear a heart. */
+function nearHer() {
+  const studio = app.world && app.world.studios && app.world.studios[0];
+  if (!studio || !studio.dj) return false;
+  return Math.hypot(player.position.x - studio.heartAt.x, player.position.z - studio.heartAt.z) < 4.2;
+}
+
+function toggleHeart() {
+  if (!nearHer() || ui.anyPanelOpen) return;
+  ambience.heartbeat(!ambience.beating, app.world.studios[0].heartAt, elapsed % BEAT);
 }
 
 function openFocused() {
@@ -653,6 +672,7 @@ const ui = new UI({
   onAction: () => {
     if (focused) openFocused();
     else if (atTheWater()) openCoinPanel();
+    else toggleHeart();
   },
   onCoinPick: (cents) => takeCoin(cents),
   onCoinCancel: () => { player.enabled = true; },
@@ -683,7 +703,8 @@ const ui = new UI({
 
 player.onInteract = () => {
   if (tour && tour.active) { stopTour(); return; }
-  openFocused();
+  if (focused) openFocused();
+  else toggleHeart();
 };
 player.onUse = () => useHeldItem();
 player.onSecondary = () => openCoinPanel();
@@ -837,6 +858,10 @@ function step(dt) {
   if (coins) coins.update(dt);
 
   for (const u of app.animated) if (u.uTime) u.uTime.value = elapsed;
+  // she only moves while someone could see it
+  for (const studio of (app.world && app.world.studios) || []) {
+    if (camera.position.distanceTo(studio.heartAt) < 17) studio.update(elapsed);
+  }
 
   if (app.splashTime >= 0 && app.world) {
     const u = app.world.water.uniforms;
