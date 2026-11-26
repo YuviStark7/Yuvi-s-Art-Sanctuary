@@ -14,6 +14,7 @@ import { buildPool, buildWaterSurface, buildCurtain, buildMist, buildLightShaft,
 import { buildIsland, buildTree, buildImportedTree } from './nature.js';
 import { loadModel, modelTextures } from './models.js';
 import { buildGallery, loadArtworkTextures } from './gallery.js';
+import { buildStudio } from './studio.js';
 import { loadShopWorks, loadShopTextures } from './shop.js';
 import { Player } from './player.js';
 import { Character, prepareFigureScene } from './character.js';
@@ -372,6 +373,10 @@ function buildWorld(quality) {
 
   const gallery = buildGallery(app.artworks, app.artworkTextures, app.textures, sanctuary.chambers, quality);
   root.add(gallery.group);
+
+  for (const chamber of sanctuary.chambers) {
+    if (chamber.spec.desk) root.add(buildStudio(chamber, app.textures, quality).group);
+  }
 
   scene.add(root);
   player.world = { benchBands: sanctuary.benchBands };

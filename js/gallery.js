@@ -283,6 +283,7 @@ export function buildGallery(artworks, loaded, textures, chambers, quality) {
   const chamberLights = [];
 
   chambers.forEach((ch, ci) => {
+    if (ch.spec.desk) return;                 // the studio is furnished by studio.js
     const spec = ch.spec;
     const fwd = ch.forward;
 

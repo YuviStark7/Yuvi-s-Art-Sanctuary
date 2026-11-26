@@ -231,7 +231,9 @@ export class Player {
       const dx = x - HALL.radius * c, dz = z - HALL.radius * s;
       const forward = dx * c + dz * s;
       const side = dx * -s + dz * c;
-      if (forward > -1.5 && forward < a.depth + HALL.shellThickness - 0.45 &&
+      // visitors stay in front of a desk; the camera may go past it
+      const deepest = a.desk ? a.desk - 0.55 - pr : a.depth + HALL.shellThickness - 0.45;
+      if (forward > -1.5 && forward < deepest &&
           Math.abs(side) < a.width / 2 - pr + 0.02) {
         return true;
       }
@@ -260,9 +262,12 @@ export class Player {
       const dx = p.x - HALL.radius * c, dz = p.z - HALL.radius * s;
       const forward = dx * c + dz * s;
       const side = dx * -s + dz * c;
+      // under an elliptical head the ceiling comes down toward the jambs
+      const b = a.width / 2, rise = a.rise || b;
+      const top = a.height - rise + rise * Math.sqrt(Math.max(0, 1 - (side / b) ** 2));
       if (forward > -1.0 && forward < a.depth + HALL.shellThickness - wall &&
-          Math.abs(side) < a.width / 2 - pad &&
-          p.y > floor && p.y < a.height - pad) {
+          Math.abs(side) < b - pad &&
+          p.y > floor && p.y < top - pad) {
         return true;
       }
     }

@@ -30,6 +30,8 @@ createServer(async (req, res) => {
     let p = decodeURIComponent(req.url.split('?')[0]);
     if (p.endsWith('/')) p += 'index.html';
     if (p.includes('..')) throw new Error('bad path');
+    // others on the same network can reach this server: keep hidden folders (.git, .wrangler) to yourself
+    if (/[\/]\.(?!well-known)/.test(p)) throw new Error('hidden');
     const file = join(ROOT, normalize(p));
     const s = await stat(file);
     if (s.isDirectory()) throw new Error('dir');

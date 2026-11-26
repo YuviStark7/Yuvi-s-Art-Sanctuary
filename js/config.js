@@ -27,10 +27,11 @@ export const SKYLIGHTS = [
   { along: 0.68, around:  2.55, a: 1.45, b: 0.74, tilt:  0.35 }
 ];
 
-// Arched doorways cut through the wall into the side chambers.
+// Arched doorways cut through the wall into side rooms. `rise` is how tall the curved head is:
+// less than half the width gives a low, wide arch. `desk` is how far beyond the wall the desk
+// stands; visitors are kept in front of it.
 export const ALCOVES = [
-  { around: Math.PI * 0.78, width: 2.15, height: 3.00, depth: 5.4 },
-  { around: Math.PI * 0.98, width: 1.75, height: 2.72, depth: 4.6 }
+  { around: Math.PI * 0.878, width: 9.0, height: 4.0, rise: 2.2, depth: 4.8, desk: 2.9 }
 ];
 
 export const POOL = {

@@ -138,14 +138,15 @@ function ellipseOpening(spec, profile) {
 function archOpening(spec, profile) {
   const rHole = HALL.radius;
   const b = spec.width / 2;
-  const shoulder = Math.max(0.01, spec.height - b);
+  const rise = spec.rise || b;
+  const shoulder = Math.max(0.01, spec.height - rise);
   return {
     kind: 'arch',
     theta0: spec.around, rHole, halfWidth: b, shoulder, spec,
     rho(s, theta) {
       const dw = rHole * wrapAngle(theta - spec.around);
       if (s <= shoulder) return Math.abs(dw) / b;
-      return Math.hypot(dw, s - shoulder) / b;
+      return Math.hypot(dw / b, (s - shoulder) / rise);
     },
     snap(s, theta, rho) {
       const dw = rHole * wrapAngle(theta - spec.around);
@@ -164,15 +165,16 @@ function archOpening(spec, profile) {
       }
       for (let i = 0; i <= arcN; i++) {                       // over the head
         const t = Math.PI - (i / arcN) * Math.PI;
-        out.push({ s: shoulder + b * Math.sin(t), theta: spec.around + (b * Math.cos(t)) / rHole });
+        out.push({ s: shoulder + rise * Math.sin(t), theta: spec.around + (b * Math.cos(t)) / rHole });
       }
       for (let i = jambN; i > 0; i--) {                       // down the right jamb
         out.push({ s: (i / jambN) * shoulder, theta: spec.around + b / rHole });
       }
+      out.push({ s: 0, theta: spec.around + b / rHole });
       return out;
     },
     cellRho(dsCell, dwCell) {
-      return Math.max(dsCell / b, dwCell / b);
+      return Math.max(dsCell / Math.min(b, rise), dwCell / b);
     }
   };
 }
@@ -290,7 +292,7 @@ function buildReveal(profile, opening, thickness, segments) {
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geo.setIndex(index);
   geo.computeBoundingSphere();
-  return { geo, outer, centroid };
+  return { geo, inner, outer, centroid };
 }
 
 /** Flat disc closing the far end of a skylight well: this is the sky. */
@@ -362,58 +364,6 @@ function sweepProfile(pts, radius, a0, a1, segs, cap) {
   geo.computeBoundingSphere();
   return geo;
 }
-
-/** Outline of an arch: straight jambs, semicircular head. */
-function archOutline(halfWidth, height, segs) {
-  const shoulder = Math.max(0.01, height - halfWidth);
-  const pts = [[-halfWidth, 0]];
-  for (let i = 0; i <= segs; i++) {
-    const t = Math.PI - (i / segs) * Math.PI;
-    pts.push([halfWidth * Math.cos(t), shoulder + halfWidth * Math.sin(t)]);
-  }
-  pts.push([halfWidth, 0]);
-  return pts;
-}
-
-/** Lofts a 2D outline along a straight direction, walls only, facing inward. */
-function loftOutline(outline, origin, forward, right, up, depth) {
-  const pos = [], nrm = [], uv = [], index = [];
-  const n = outline.length;
-  const place = (p, d) =>
-    origin.clone()
-      .addScaledVector(right, p[0])
-      .addScaledVector(up, p[1])
-      .addScaledVector(forward, d);
-
-  for (let i = 0; i < n; i++) {
-    const prev = outline[(i - 1 + n) % n], next = outline[(i + 1) % n];
-    let tx = next[0] - prev[0], ty = next[1] - prev[1];
-    const tl = Math.hypot(tx, ty) || 1;
-    tx /= tl; ty /= tl;
-    // inward normal of a counter-clockwise outline
-    const nx = ty, ny = -tx;
-    const normal = right.clone().multiplyScalar(nx).addScaledVector(up, ny).normalize();
-    for (const d of [0, depth]) {
-      const v = place(outline[i], d);
-      pos.push(v.x, v.y, v.z);
-      nrm.push(normal.x, normal.y, normal.z);
-    }
-    uv.push((i / n) * 3, 0, (i / n) * 3, depth / 3);
-  }
-  for (let i = 0; i < n - 1; i++) {
-    const a = i * 2, b = i * 2 + 1, c = (i + 1) * 2 + 1, d = (i + 1) * 2;
-    index.push(a, c, b, a, d, c);
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  geo.setIndex(index);
-  geo.computeBoundingSphere();
-  return geo;
-}
-
-/* ------------------------------------------------------------ triplanar -- */
 
 /**
  * Projects the concrete maps from world space on all three axes and blends by
@@ -801,15 +751,6 @@ export function buildSanctuary(textures, quality) {
     side: THREE.FrontSide
   }), tile(3.4), mottleAmount);
 
-  const interiorMat = makeTriplanar(new THREE.MeshStandardMaterial({
-    color: 0x8e8a83,
-    map: textures.concrete.map,
-    roughnessMap: textures.concrete.roughnessMap,
-    roughness: 0.94,
-    metalness: 0.0,
-    side: THREE.DoubleSide
-  }), tile(3.4), mottleAmount);
-
   const revealMat = makeTriplanar(new THREE.MeshStandardMaterial({
     color: PALETTE.concreteDeep,
     map: textures.concrete.map,
@@ -944,68 +885,110 @@ export function buildSanctuary(textures, quality) {
     }
   }
 
-  /* ---- side chambers behind the arched doorways ---- */
+  /* ---- side rooms behind the arched doorways ---- */
+  // Warm and dark, unlike the hall: low albedo keeps the daylight out of it.
+  const studioMat = makeTriplanar(new THREE.MeshStandardMaterial({
+    color: 0x6b5646,
+    map: textures.concrete.map,
+    roughnessMap: textures.concrete.roughnessMap,
+    roughness: 0.92,
+    metalness: 0.0,
+    side: THREE.DoubleSide
+  }), tile(3.4), mottleAmount);
+  // The room does not see the sky, so its floor must not mirror the bright hall: a black
+  // environment of its own leaves only the room's lamps to light it.
+  const night = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+  night.needsUpdate = true;
+  const studioFloorMat = new THREE.MeshStandardMaterial({
+    color: 0xffdcba, map: textures.floor.map, roughness: 0.28, metalness: 0.1, envMap: night
+  });
+
   const chambers = [];
   for (let i = 0; i < ALCOVES.length; i++) {
     const spec = ALCOVES[i];
     const o = openings[SKYLIGHTS.length + i];
 
     // doorway reveal through the thickness of the wall
-    const rv = buildReveal(profile, o, HALL.shellThickness, 96);
+    const rv = buildReveal(profile, o, HALL.shellThickness, 128);
     const jamb = new THREE.Mesh(rv.geo, revealMat);
     jamb.receiveShadow = true;
     group.add(jamb);
 
     const c = Math.cos(spec.around), s = Math.sin(spec.around);
-    const forward = new THREE.Vector3(c, 0, s);                 // outward, into the chamber
+    const forward = new THREE.Vector3(c, 0, s);                 // outward, into the room
     const right = new THREE.Vector3(-s, 0, c);
-    const up = new THREE.Vector3(0, 1, 0);
-    const origin = new THREE.Vector3(
-      HALL.radius * c, 0, HALL.radius * s
-    ).addScaledVector(forward, HALL.shellThickness - 0.02);
+    const base = new THREE.Vector3(HALL.radius * c, 0, HALL.radius * s);
+    const origin = base.clone().addScaledVector(forward, HALL.shellThickness - 0.02);
+    const at = (side, y, f) => base.clone()
+      .addScaledVector(right, side).addScaledVector(forward, f).setY(y);
+    const back = HALL.shellThickness + spec.depth;
 
-    const outline = archOutline(spec.width / 2 + 0.22, spec.height + 0.22, 26);
-    const walls = new THREE.Mesh(
-      loftOutline(outline, origin, forward, right, up, spec.depth),
-      interiorMat
-    );
+    // The wall of the hall is curved and the arch is wide, so the room cannot start on a flat
+    // plane: it starts on the far edge of the reveal itself and runs straight back from there.
+    const front = rv.outer;
+    const side = front.map((p) => p.clone().sub(base).dot(right));
+    const pos = [], uv = [], index = [];
+    front.forEach((p, k) => {
+      const q = at(side[k], p.y, back);
+      pos.push(p.x, p.y, p.z, q.x, q.y, q.z);
+      uv.push(k / front.length * 4, 0, k / front.length * 4, 1);
+    });
+    for (let k = 0; k < front.length - 1; k++) {
+      const a = k * 2, b = a + 1, c2 = a + 2, d = a + 3;
+      index.push(a, c2, d, a, d, b);
+    }
+    const wallGeo = new THREE.BufferGeometry();
+    wallGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    wallGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    wallGeo.setIndex(index);
+    wallGeo.computeVertexNormals();
+    const walls = new THREE.Mesh(wallGeo, studioMat);
     walls.receiveShadow = true;
+    walls.castShadow = true;                                    // keeps the sun out
     group.add(walls);
 
-    // back wall
-    const backShape = new THREE.Shape();
-    backShape.moveTo(outline[0][0], outline[0][1]);
-    for (let k = 1; k < outline.length; k++) backShape.lineTo(outline[k][0], outline[k][1]);
-    backShape.closePath();
-    const back = new THREE.Mesh(new THREE.ShapeGeometry(backShape, 24), interiorMat);
-    back.geometry.rotateY(Math.PI);
-    back.position.copy(origin).addScaledVector(forward, spec.depth);
-    back.lookAt(back.position.clone().addScaledVector(forward, 1));
-    back.receiveShadow = true;
-    group.add(back);
+    // back wall: the same outline, flat
+    const shape = new THREE.Shape();
+    shape.moveTo(side[0], front[0].y);
+    for (let k = 1; k < front.length; k++) shape.lineTo(side[k], front[k].y);
+    shape.closePath();
+    const backGeo = new THREE.ShapeGeometry(shape);
+    backGeo.applyMatrix4(new THREE.Matrix4().makeBasis(
+      right, new THREE.Vector3(0, 1, 0), forward.clone().negate()));
+    const backWall = new THREE.Mesh(backGeo, studioMat);
+    backWall.position.copy(at(0, 0, back));
+    backWall.receiveShadow = true;
+    group.add(backWall);
 
-    // chamber floor — run it back under the doorway so no gap opens up
-    // where it meets the floor of the hall
-    const chDepth = spec.depth + HALL.shellThickness + 1.2;
-    const chGeo = new THREE.PlaneGeometry(spec.width + 0.9, chDepth);
-    chGeo.rotateX(-Math.PI / 2);
-    const chFloor = new THREE.Mesh(chGeo, floorMat);
-    chFloor.rotation.y = Math.PI / 2 - spec.around;
-    chFloor.position.copy(origin)
-      .addScaledVector(forward, spec.depth / 2 - HALL.shellThickness / 2 - 0.6);
-    chFloor.position.y = 0.002;
+    // floor, from where the hall's floor ends to the back wall, following the curve in front
+    const edge = HALL.radius + 0.36;
+    const half = Math.max(Math.abs(side[0]), Math.abs(side[side.length - 1]));
+    const floorShape = new THREE.Shape();
+    for (let k = 0; k <= 32; k++) {
+      const x = -half + (k / 32) * half * 2;
+      const f = Math.sqrt(edge * edge - x * x) - HALL.radius;
+      if (k === 0) floorShape.moveTo(x, f); else floorShape.lineTo(x, f);
+    }
+    floorShape.lineTo(half, back);
+    floorShape.lineTo(-half, back);
+    floorShape.closePath();
+    const floorGeo = new THREE.ShapeGeometry(floorShape);
+    floorGeo.applyMatrix4(new THREE.Matrix4().makeBasis(right, forward, new THREE.Vector3(0, -1, 0)));
+    const chFloor = new THREE.Mesh(floorGeo, studioFloorMat);
+    chFloor.material.side = THREE.DoubleSide;
+    chFloor.position.copy(base).setY(0.003);
     chFloor.receiveShadow = true;
     group.add(chFloor);
 
     chambers.push({
-      spec, forward, right, origin,
+      spec, forward, right, origin, base, at, back, front, lip: rv.inner,
       centre: origin.clone().addScaledVector(forward, spec.depth / 2)
     });
   }
 
   /* ---- occlusion in the corners ---- */
   if (quality.roomAO) {
-    for (const m of [concrete, interiorMat, revealMat, floorMat, benchMat]) {
+    for (const m of [concrete, revealMat, floorMat, benchMat, studioMat]) {
       makeRoomOcclusion(m, OCCLUSION.reach, OCCLUSION.strength);
     }
   }
@@ -1019,7 +1002,7 @@ export function buildSanctuary(textures, quality) {
 
   return {
     group, profile, openings, reflector,
-    materials: { concrete, interiorMat, revealMat, floorMat, benchMat, skyMat },
+    materials: { concrete, revealMat, floorMat, benchMat, studioMat, studioFloorMat, skyMat },
     skylightLights,
     chambers,
     benchBands,
