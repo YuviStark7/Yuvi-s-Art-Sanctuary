@@ -8,6 +8,9 @@
  */
 import * as THREE from 'three';
 
+/** How loud the water is (the falling curtain and its drips) beside everything else. */
+const WATER = 0.6;
+
 export class Ambience {
   constructor() {
     this.ctx = null;
@@ -75,14 +78,14 @@ export class Ambience {
       filt.frequency.value = b.f;
       filt.Q.value = b.q;
       const g = ctx.createGain();
-      g.gain.value = b.g;
+      g.gain.value = b.g * WATER;
       src.connect(filt).connect(g).connect(panner);
 
       // slow breathing so the fall never sounds like static
       const lfo = ctx.createOscillator();
       lfo.frequency.value = 0.045 + Math.random() * 0.09;
       const lfoGain = ctx.createGain();
-      lfoGain.gain.value = b.g * 0.28;
+      lfoGain.gain.value = b.g * WATER * 0.28;
       lfo.connect(lfoGain).connect(g.gain);
       lfo.start();
     }
@@ -106,7 +109,7 @@ export class Ambience {
       osc.frequency.setValueAtTime(f, t);
       osc.frequency.exponentialRampToValueAtTime(f * 0.45, t + 0.16);
       g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(0.05 + Math.random() * 0.05, t + 0.006);
+      g.gain.exponentialRampToValueAtTime((0.05 + Math.random() * 0.05) * WATER, t + 0.006);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
       osc.connect(g).connect(panner);
       osc.start(t);
