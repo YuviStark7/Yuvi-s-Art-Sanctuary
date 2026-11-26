@@ -3,9 +3,9 @@
  *
  *   node tools/human/cyborg.mjs        (after the fetch steps in README.md)
  *
- * What differs from build.mjs: no clothes; every body vertex carries `_CHROME`, two numbers: how far
- * inside the plated half it lies (0.5 is the seam, and the page sharpens it) and how close the hair
- * lies over it, so the page can shade the hairline; the relief that would show anatomical detail
+ * What differs from build.mjs: no clothes; every body vertex carries `_CHROME`, three numbers: how far
+ * inside the plated half it lies (0.5 is the seam, and the page sharpens it), how close the hair
+ * lies over it, so the page can shade the hairline, and how much of it is arm; the relief that would show anatomical detail
  * through a plate is smoothed away; and the legs are left out, because hers are machinery the page
  * builds.
  * Her hair here is only the swept-back base: the curls, headphones and flower are made by the page.
@@ -317,10 +317,13 @@ meshNode('body', prim(bodyMesh, per, skinMat, (mesh) => {
   // padded to four bytes per vertex, as vertex attributes must be
   const data = new Uint8Array(mesh.P.length / 3 * 4);
   mesh.src.forEach((v, i) => {
+    // which points are arm: the page cuts her away below the pelvis and must leave her hands
+    const [armL, armR] = armWeight(v);
+    data[i * 4 + 2] = Math.round(255 * Math.min(1, armL + armR));
     data[i * 4] = Math.round(chromeOf[v] * 255);
     data[i * 4 + 1] = Math.round(255 * hairNear(mesh.P[i * 3], mesh.P[i * 3 + 1], mesh.P[i * 3 + 2]));
   });
-  return { _CHROME: b.accessor(data, 'VEC2', 5121, { target: 34962, normalized: true, stride: 4, count: mesh.src.length }) };
+  return { _CHROME: b.accessor(data, 'VEC3', 5121, { target: 34962, normalized: true, stride: 4, count: mesh.src.length }) };
 }));
 
 const eyeMat = material({ name: 'eye', alphaMode: 'MASK', alphaCutoff: 0.5, pbrMetallicRoughness: {

@@ -64,8 +64,8 @@ function bodyMaterial(source, room, steel, anchors) {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `
         #include <common>
-        attribute vec2 _chrome;
-        varying vec2 vChrome;
+        attribute vec3 _chrome;
+        varying vec3 vChrome;
         varying vec3 vRest;`)
       .replace('#include <begin_vertex>', `
         #include <begin_vertex>
@@ -77,7 +77,7 @@ function bodyMaterial(source, room, steel, anchors) {
         uniform vec3 uMouth;
         uniform float uEyeY;
         uniform sampler2D uSteel;
-        varying vec2 vChrome;
+        varying vec3 vChrome;
         varying vec3 vRest;
         float dotHash( vec3 p ) { return fract( sin( dot( p, vec3( 12.9898, 78.233, 37.719 ) ) ) * 43758.5453 ); }
 
@@ -109,8 +109,8 @@ function bodyMaterial(source, room, steel, anchors) {
         }`)
       .replace('#include <map_fragment>', `
         #include <map_fragment>
-        // below the pelvis shell she is all machinery; her hands, hanging beside, are kept
-        if ( vRest.y < 0.866 + 0.34 * min( abs( vRest.x ), 0.14 ) && abs( vRest.x ) < 0.2 ) discard;
+        // below the pelvis shell she is all machinery; her hands, which hang as low, are arm and kept
+        if ( vRest.y < 0.866 + 0.34 * min( abs( vRest.x ), 0.14 ) && vChrome.z < 0.4 ) discard;
         float seamW = max( fwidth( vChrome.x ), 0.012 );
         float plate = smoothstep( 0.5 - seamW, 0.5 + seamW, vChrome.x );
         float gapLine = 1.0 - smoothstep( 0.016, 0.016 + seamW * 1.6, abs( vChrome.x - 0.455 ) );
