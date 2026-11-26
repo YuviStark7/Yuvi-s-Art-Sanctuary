@@ -825,6 +825,7 @@ canvas.addEventListener('webglcontextlost', (e) => {
 
 let elapsed = 0;
 let lastTime = 0;
+const _face = new THREE.Vector3();
 
 function attachSmoke() {
   if (character && character.smoke && !character.smoke.parent) scene.add(character.smoke);
@@ -860,7 +861,9 @@ function step(dt) {
   for (const u of app.animated) if (u.uTime) u.uTime.value = elapsed;
   // she only moves while someone could see it
   for (const studio of (app.world && app.world.studios) || []) {
-    if (camera.position.distanceTo(studio.heartAt) < 17) studio.update(elapsed);
+    if (camera.position.distanceTo(studio.heartAt) < 17) {
+      studio.update(elapsed, app.mode === 'visit' ? player.eyePosition(_face) : null);
+    }
   }
 
   if (app.splashTime >= 0 && app.world) {

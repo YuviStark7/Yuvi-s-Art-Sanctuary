@@ -2,9 +2,9 @@
  * The DJ: half skin, half chrome, standing at the decks.
  *
  * The body is models/figure-cyborg.glb (tools/human/cyborg.mjs). It carries, at every point, how
- * far inside the plated half it lies; the shader below turns that into chrome with a dark seam
- * round it. Her curls, headphones, the flower over her left eye and the spine on her back are
- * made here. Her arms are posed by the same two-bone solver the visitors use.
+ * far inside the plated half it lies; the shader below turns that into chrome. Her curls,
+ * headphones and the flower over her left eye are made here; the hard parts of the machine and
+ * her legs are in cyborg.body.js. Her arms are posed by the same two-bone solver the visitors use.
  *
  * She faces -z in her own space, like every figure here, so her left is -x.
  */
@@ -13,10 +13,10 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { loadModel } from './models.js';
 import { Arm } from './figure/ik.js';
+import { buildMachine, buildPlatform } from './cyborg.body.js';
 
-const RISER = 0.12;                           // she stands on a step the desk hides
+const RISER = 0.12;                           // the height of the stage under her feet
 const STATURE = 1.07;                         // a little larger than life, to hold her own behind that desk
-const HIDDEN = 0.80;                          // below this height of her body the desk covers all
 
 export const BEAT = 60 / 64;                  // seconds per heartbeat, shared with the sound
 
@@ -47,19 +47,25 @@ export function tame(material, limit = 1.25) {
 
 /* ------------------------------------------------------------- the skin -- */
 
-function bodyMaterial(source, probe, anchors) {
+/**
+ * Skin and plate in one material. The model says at every point how far inside the plated half it
+ * lies; everything a machine has (grooves between panels, a ribbed midriff, a raised lip along the
+ * seam) is drawn from the point's place on her body, and tilts the light as well as darkening it.
+ */
+function bodyMaterial(source, room, steel, anchors) {
   const mat = new THREE.MeshStandardMaterial({
-    map: source.map, envMap: probe, envMapIntensity: 1.0, roughness: 0.36, metalness: 0.0
+    map: source.map, envMap: room, envMapIntensity: 1.0, roughness: 0.36, metalness: 0.0
   });
   const mouth = new THREE.Vector3(...anchors.mouth), eye = new THREE.Vector3(...anchors.eyeL);
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uMouth = { value: mouth };
     shader.uniforms.uEyeY = { value: eye.y };
+    shader.uniforms.uSteel = { value: steel };
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', `
         #include <common>
-        attribute float _chrome;
-        varying float vChrome;
+        attribute vec2 _chrome;
+        varying vec2 vChrome;
         varying vec3 vRest;`)
       .replace('#include <begin_vertex>', `
         #include <begin_vertex>
@@ -70,17 +76,45 @@ function bodyMaterial(source, probe, anchors) {
         #include <common>
         uniform vec3 uMouth;
         uniform float uEyeY;
-        varying float vChrome;
+        uniform sampler2D uSteel;
+        varying vec2 vChrome;
         varying vec3 vRest;
         float dotHash( vec3 p ) { return fract( sin( dot( p, vec3( 12.9898, 78.233, 37.719 ) ) ) * 43758.5453 ); }
-        // a thin groove where \`v\` crosses \`at\`
-        float groove( float v, float at ) { return 1.0 - smoothstep( 0.0008, 0.0022, abs( v - at ) ); }`)
+
+        // how far, in metres, to the nearest line where two panels of her meet
+        float panelLine( vec3 p ) {
+          float ax = abs( p.x ), d = 1.0;
+          if ( p.x < -0.152 && p.y < 1.34 ) {                          // her left arm, in segments
+            vec3 s = vec3( -0.166, 1.367, -0.022 ), e = vec3( -0.219, 1.123, -0.015 ), w = vec3( -0.245, 0.902, -0.060 );
+            float t = dot( p - s, e - s ) / dot( e - s, e - s );
+            float u = dot( p - e, w - e ) / dot( w - e, w - e );
+            vec3 axis = t < 1.0 ? mix( s, e, t ) : mix( e, w, u );
+            d = t < 1.0 ? min( abs( t - 0.30 ), abs( t - 0.62 ) ) * 0.25 : min( abs( u - 0.36 ), abs( u - 0.70 ) ) * 0.228;
+            return min( d, abs( p.z - axis.z ) );
+          }
+          float underBust = 1.186 + 0.05 * min( 1.0, p.x * p.x / 0.03 );
+          d = min( d, abs( p.y - underBust ) );
+          if ( p.y > underBust && p.y < 1.285 && p.z < 0.0 ) d = min( d, ax );                    // sternum
+          if ( p.y < underBust - 0.012 ) d = min( d, abs( ax - ( 0.108 + 0.014 * sin( p.y * 23.0 ) ) ) );
+          if ( p.y < 0.99 ) d = min( d, abs( p.y - ( 0.925 + 0.55 * ax ) ) * 0.87 );              // a V over the hips
+          if ( p.x < -0.02 && p.y > 1.30 && p.y < 1.44 ) d = min( d, abs( p.y - ( 1.352 - 0.35 * p.x ) ) * 0.94 );
+          if ( p.z > 0.0 ) d = min( d, min( abs( p.y - 1.26 + 0.3 * ax ), abs( p.y - 1.13 - 0.4 * ax ) ) );
+          return d;
+        }
+        // the ribbed midriff: 0 outside, 1 inside
+        float midriff( vec3 p ) {
+          float wide = 0.052 + 3.2 * ( p.y - 1.065 ) * ( p.y - 1.065 );
+          return ( 1.0 - smoothstep( wide - 0.002, wide + 0.002, abs( p.x ) ) )
+               * smoothstep( 0.956, 0.962, p.y ) * ( 1.0 - smoothstep( 1.160, 1.166, p.y ) ) * step( p.z, -0.02 );
+        }`)
       .replace('#include <map_fragment>', `
         #include <map_fragment>
-        // her legs are never meant to be seen: nothing is drawn where the desk stands in front
-        if ( vRest.y < ${HIDDEN.toFixed(2)} ) discard;
-        float plate = smoothstep( 0.47, 0.53, vChrome );
-        float seam = 1.0 - smoothstep( 0.04, 0.11, abs( vChrome - 0.5 ) );
+        // below the pelvis shell she is all machinery; her hands, hanging beside, are kept
+        if ( vRest.y < 0.866 + 0.34 * min( abs( vRest.x ), 0.14 ) && abs( vRest.x ) < 0.2 ) discard;
+        float seamW = max( fwidth( vChrome.x ), 0.012 );
+        float plate = smoothstep( 0.5 - seamW, 0.5 + seamW, vChrome.x );
+        float gapLine = 1.0 - smoothstep( 0.016, 0.016 + seamW * 1.6, abs( vChrome.x - 0.455 ) );
+        float lip = 1.0 - smoothstep( 0.0, 0.085, abs( vChrome.x - 0.545 ) );
         {
           // warm, sun-touched skin with freckles over the nose and cheeks, and a deeper lip
           diffuseColor.rgb *= vec3( 0.68, 0.45, 0.32 );
@@ -90,22 +124,56 @@ function bodyMaterial(source, probe, anchors) {
           diffuseColor.rgb *= 1.0 - 0.28 * speck * onFace;
           vec3 d = ( vRest - uMouth ) / vec3( 0.027, 0.012, 0.022 );
           diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.23, 0.042, 0.030 ), ( 1.0 - smoothstep( 0.6, 1.1, length( d ) ) ) * 0.85 );
+          // the roots of her hair thinning out onto the skin, so the hairline is not a cut edge
+          float roots = smoothstep( 0.05, 1.0, vChrome.y );
+          float strand = dotHash( floor( vRest * vec3( 900.0, 380.0, 900.0 ) ) );
+          roots *= 0.80 + 0.3 * strand;
+          diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.020, 0.011, 0.007 ), clamp( roots, 0.0, 0.92 ) );
         }
-        // the plates: panel lines where they would be assembled
-        float panel = max( max( groove( vRest.y, 1.06 ), groove( vRest.y, 0.93 ) ), groove( vRest.y, 0.50 ) );
-        panel = max( panel, groove( abs( vRest.x ), 0.085 + 0.02 * sin( vRest.y * 21.0 ) ) * step( vRest.y, 1.30 ) );
-        panel = max( panel, groove( vRest.y + abs( vRest.x ) * 0.5, 1.47 ) );
-        diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.56, 0.54, 0.53 ), plate );
-        diffuseColor.rgb *= 1.0 - 0.75 * max( seam, panel * plate );`)
+        // the plates
+        float toLine = panelLine( vRest );
+        float lineW = max( fwidth( toLine ), 0.0006 );
+        float groove = ( 1.0 - smoothstep( 0.0014, 0.0014 + lineW, toLine ) ) * plate;
+        float ribbed = midriff( vRest ) * plate;
+        float ridge = 0.5 + 0.5 * cos( 6.28318 * ( vRest.y + 1.1 * vRest.x * vRest.x ) / 0.0175 );
+        // heights in metres, which the light is tilted by further down
+        float relief = -0.0022 * ( 1.0 - smoothstep( 0.0, 0.0048, toLine ) ) * plate
+                     + 0.0019 * lip - 0.0012 * gapLine
+                     + ribbed * ( 0.0030 * ridge - 0.0026 );
+        diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.70, 0.685, 0.67 ), plate );
+        diffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.27, 0.255, 0.245 ) * ( 0.35 + 0.9 * ridge ), ribbed );
+        diffuseColor.rgb *= 1.0 - 0.90 * max( gapLine, groove );`)
       .replace('#include <roughnessmap_fragment>', `
         #include <roughnessmap_fragment>
-        roughnessFactor = mix( roughnessFactor, 0.17, plate );`)
+        roughnessFactor = mix( roughnessFactor, 0.115, plate );
+        roughnessFactor = mix( roughnessFactor, 0.30, ribbed );
+        roughnessFactor = mix( roughnessFactor, 0.55, max( gapLine, groove ) );`)
       .replace('#include <metalnessmap_fragment>', `
         #include <metalnessmap_fragment>
-        metalnessFactor = mix( 0.0, 1.0, plate );`);
+        metalnessFactor = mix( 0.0, 1.0, plate );`)
+      .replace('#include <normal_fragment_maps>', `
+        #include <normal_fragment_maps>
+        {
+          vec3 dpx = dFdx( - vViewPosition ), dpy = dFdy( - vViewPosition );
+          vec3 r1 = cross( dpy, normal ), r2 = cross( normal, dpx );
+          float det = dot( dpx, r1 ) * faceDirection;
+          vec3 slope = sign( det ) * ( dFdx( relief ) * r1 + dFdy( relief ) * r2 );
+          normal = normalize( abs( det ) * normal - slope );
+        }`)
+      .replace('#include <lights_fragment_maps>', `
+        #include <lights_fragment_maps>
+        #ifdef USE_ENVMAP
+        {
+          // plate mirrors the dark studio, skin keeps the warm room
+          vec3 back = reflect( - geometryViewDir, geometryNormal );
+          back = normalize( mix( back, geometryNormal, pow4( material.roughness ) ) );
+          back = inverseTransformDirection( back, viewMatrix );
+          radiance = mix( radiance, textureCubeUV( uSteel, back, material.roughness ).rgb, plate );
+        }
+        #endif`);
   };
   mat.customProgramCacheKey = () => 'cyborg-skin';
-  return tame(mat, 1.15);
+  return tame(mat, 1.02);
 }
 
 /* ------------------------------------------------------------ the extras -- */
@@ -272,42 +340,15 @@ function flower(anchors, probe) {
   };
 }
 
-/** Ridged segments down the middle of her back, each riding the bone nearest its height. */
-function spine(body, bones, rest, mat) {
-  const pos = body.geometry.attributes.position;
-  const v = new THREE.Vector3();
-  const backAt = (y) => {
-    let z = -1;
-    for (let i = 0; i < pos.count; i++) {
-      v.fromBufferAttribute(pos, i);
-      if (Math.abs(v.x) < 0.03 && Math.abs(v.y - y) < 0.022) z = Math.max(z, v.z);
-    }
-    return z;
-  };
-  const segment = new THREE.CapsuleGeometry(0.0105, 0.026, 3, 8);
-  segment.rotateZ(Math.PI / 2);
-  const pieces = {};
-  for (let y = 1.02; y < 1.47; y += 0.031) {
-    const z = backAt(y);
-    if (z < 0) continue;
-    const name = y > rest.neck.y - 0.02 ? 'neck' : y > rest.chest.y ? 'chest' : 'spine';
-    (pieces[name] ||= []).push(segment.clone().translate(0, y - rest[name].y, z + 0.003 - rest[name].z));
-  }
-  for (const [name, list] of Object.entries(pieces)) {
-    bones[name].add(new THREE.Mesh(mergeGeometries(list), mat));
-    list.forEach((g) => g.dispose());
-  }
-  segment.dispose();
-}
-
 /* ----------------------------------------------------------------- build -- */
 
 /**
  * @param chamber  from buildSanctuary
  * @param probe    the studio's captured reflections
+ * @param steel    what her metal mirrors, from buildSteelSky
  * @param surface  height of the desk's playing surface
  */
-export async function buildCyborg(chamber, probe, surface) {
+export async function buildCyborg(chamber, probe, steel, surface) {
   const gltf = await loadModel('models/figure-cyborg.glb');
   const anchors = gltf.asset.extras.anchors;
   const figure = cloneSkinned(gltf.scene);
@@ -331,7 +372,7 @@ export async function buildCyborg(chamber, probe, surface) {
   });
   figure.traverse((o) => {
     if (!o.isMesh) return;
-    if (o === body) o.material = bodyMaterial(o.material, probe, anchors);
+    if (o === body) o.material = bodyMaterial(o.material, probe, steel, anchors);
     else {
       o.material = tame(o.material.clone());
       o.material.envMap = probe;
@@ -361,16 +402,33 @@ export async function buildCyborg(chamber, probe, surface) {
     bones.head.add(holder);
   };
 
-  const chrome = tame(new THREE.MeshStandardMaterial({ color: 0xd9d5d0, metalness: 1.0, roughness: 0.26, envMap: probe, envMapIntensity: 1.1 }));
-  const dark = tame(new THREE.MeshStandardMaterial({ color: 0x14100d, roughness: 0.55, envMap: probe }));
-  const glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 1.55, 0.8), toneMapped: false });
+  const metal = (color, roughness) => tame(new THREE.MeshStandardMaterial({
+    color, metalness: 1.0, roughness, envMap: steel, side: THREE.DoubleSide
+  }), 1.02);
+  const chrome = metal(0xd6d2cd, 0.14), gun = metal(0x6a645e, 0.28);
+  const dark = tame(new THREE.MeshStandardMaterial({ color: 0x14100d, roughness: 0.55, envMap: probe, side: THREE.DoubleSide }));
+  const glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.9, 1.2, 0.62), toneMapped: false });
   const hairMat = tame(new THREE.MeshStandardMaterial({ color: 0x1b0f09, roughness: 0.4, envMap: probe, envMapIntensity: 0.7 }));
 
   onHead(curls(anchors, hairMat));
   onHead(headphones(anchors, chrome, dark, glow));
   const bloom = flower(anchors, probe);
   onHead(bloom.group);
-  spine(body, bones, rest, chrome);
+  const machine = { steel: chrome, gun, dark, glow };
+  buildMachine(body, rest, machine);
+  root.add(buildPlatform(RISER / STATURE, machine));
+  // one generous sphere round all of her, so nothing is drawn when she is out of view
+  const reach = new THREE.Sphere(new THREE.Vector3(0, 0.9, 0), 1.25);
+  figure.traverse((o) => {
+    if (!o.isSkinnedMesh) return;
+    o.boundingSphere = reach.clone();
+    o.frustumCulled = true;
+  });
+  // her weight on one leg, the other knee eased
+  bones.hipL.rotation.set(0.075, 0, -0.012);
+  bones.kneeL.rotation.x = -0.15;
+  bones.ankleL.rotation.x = 0.075;
+  bones.hipR.rotation.z = 0.022;
 
   /* ---- hands on the decks ---- */
   const arms = {};
@@ -389,11 +447,43 @@ export async function buildCyborg(chamber, probe, surface) {
   // her right hand is on the visitor's left (negative side), her left on the visitor's right
   const hands = [{ L: 'R', side: -0.53 }, { L: 'L', side: 0.28 }];
 
-  function pose(t, pulse) {
-    // the head keeps time; she leans a little into the decks
-    bones.chest.rotation.x = -0.10 - 0.018 * pulse;
-    bones.neck.rotation.x = -0.05;
-    bones.head.rotation.set(-0.12 - 0.06 * pulse, 0.06 * Math.sin(t * 0.31), 0.045 * Math.sin(t * 0.47));
+  // where her attention is: eased toward the visitor, never snapped
+  const gaze = { yaw: 0, pitch: 0, on: 0, at: 0 };
+  const seen = new THREE.Vector3();
+  const smooth = (a, b, x) => { const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+
+  /** @param visitor  where the visitor's face is, in the room, or null */
+  function watch(t, visitor) {
+    const dt = Math.max(0, Math.min(0.1, t - gaze.at));
+    gaze.at = t;
+    let yaw = 0, pitch = 0, on = 0;
+    if (visitor) {
+      root.worldToLocal(seen.copy(visitor));
+      const dx = seen.x, dy = seen.y - 1.60, dz = seen.z + 0.10;         // from between her eyes
+      const far = Math.hypot(dx, dz) * STATURE;
+      // only someone in front of her, coming up to the desk
+      on = (1 - smooth(3.6, 5.2, far)) * smooth(0.2, 0.7, -dz);
+      yaw = Math.max(-0.62, Math.min(0.62, Math.atan2(-dx, -dz)));
+      pitch = Math.max(-0.28, Math.min(0.24, Math.atan2(dy, Math.hypot(dx, dz))));
+    }
+    const k = 1 - Math.exp(-3.0 * dt);
+    gaze.on += (on - gaze.on) * k;
+    gaze.yaw += (yaw - gaze.yaw) * k;
+    gaze.pitch += (pitch - gaze.pitch) * k;
+  }
+
+  function pose(t) {
+    // a very small nod in time with the heart: smooth, not on its two thumps
+    const nod = Math.sin((t / BEAT) * Math.PI * 2);
+    const w = gaze.on, mix = (a, b) => a + (b - a) * w;
+    // the chest leans over the decks, so neck and head make up for that when she looks up at someone
+    const lift = gaze.pitch + 0.10;
+    bones.chest.rotation.x = -0.10 - 0.003 * nod;
+    bones.neck.rotation.set(mix(-0.05, 0.4 * lift), 0.4 * gaze.yaw * w, 0);
+    bones.head.rotation.set(
+      mix(-0.12, 0.6 * lift) - 0.011 * nod,
+      mix(0.05 * Math.sin(t * 0.31), 0.6 * gaze.yaw),
+      mix(0.035 * Math.sin(t * 0.47), 0.02));
     root.updateMatrixWorld(true);
     hands.forEach(({ L, side }, i) => {
       // the right hand works the platter back and forth; the left rides a control
@@ -405,20 +495,20 @@ export async function buildCyborg(chamber, probe, surface) {
       bones['wrist' + L].rotation.set(0.55, 0, 0);
     });
   }
-  pose(0, 0);
+  pose(0);
   bloom.update(0, 0);
 
   return {
     group: root,
     head: bones.head,
-    update(t) {
-      const pulse = heartPulse(t);
-      pose(t, pulse);
-      bloom.update(t, pulse);
+    update(t, visitor) {
+      watch(t, visitor);
+      pose(t);
+      bloom.update(t, heartPulse(t));
     },
     dispose() {
       // her body's geometry and textures belong to the model cache; what was made here goes
-      const mine = new Set([...own, chrome, dark, glow, hairMat]);
+      const mine = new Set([...own, chrome, gun, dark, glow, hairMat]);
       root.traverse((o) => {
         if (!o.isMesh || o.userData.shared) return;
         o.geometry.dispose();

@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { buildDesk, TOP } from './desk.js';
 import { buildCyborg } from './cyborg.js';
+import { buildSteelSky } from './cyborg.body.js';
 
 const GLOW = new THREE.Color(1.0, 0.62, 0.30);
 
@@ -75,7 +76,7 @@ export function buildStudio(chamber, textures, quality) {
    * One look around from where she will stand, so the metal and the polished floor mirror this
    * warm room and not the bright hall the rest of the building reflects. Done once, at load.
    */
-  let probe = null;
+  let probe = null, steel = null;
   const capture = (renderer, scene) => {
     const target = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType });
     const camera = new THREE.CubeCamera(0.05, 60, target);
@@ -112,6 +113,7 @@ export function buildStudio(chamber, textures, quality) {
       material.needsUpdate = true;
     }
     desk.reflective.forEach((m) => { m.envMapIntensity = 2.2; });
+    steel = buildSteelSky(renderer, chamber.forward, chamber.right);
     renderer.shadowMap.needsUpdate = true;
   };
 
@@ -121,16 +123,17 @@ export function buildStudio(chamber, textures, quality) {
     heartAt: at(0, 1.35, spec.desk + 0.5),
     chamber,
     async arrive() {
-      const dj = await buildCyborg(chamber, probe.texture, TOP);
+      const dj = await buildCyborg(chamber, probe.texture, steel.texture, TOP);
       if (studio.gone) { dj.dispose(); return; }          // the room was rebuilt while she loaded
       studio.dj = dj;
       group.add(dj.group);
     },
-    update(t) { if (studio.dj) studio.dj.update(t); },
+    update(t, visitor) { if (studio.dj) studio.dj.update(t, visitor); },
     dispose() {
       studio.gone = true;
       if (studio.dj) { studio.dj.group.removeFromParent(); studio.dj.dispose(); }
       if (probe) probe.dispose();
+      if (steel) steel.dispose();
     }
   };
   return studio;

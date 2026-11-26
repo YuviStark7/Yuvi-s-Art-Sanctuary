@@ -3,9 +3,11 @@
  *
  *   node tools/human/cyborg.mjs        (after the fetch steps in README.md)
  *
- * What differs from build.mjs: no clothes, so the whole body is kept; every body vertex carries
- * `_CHROME`, how far inside the plated half it lies (0.5 is the seam, and the page sharpens it);
- * and the relief that would show anatomical detail through a plate is smoothed away first.
+ * What differs from build.mjs: no clothes; every body vertex carries `_CHROME`, two numbers: how far
+ * inside the plated half it lies (0.5 is the seam, and the page sharpens it) and how close the hair
+ * lies over it, so the page can shade the hairline; the relief that would show anatomical detail
+ * through a plate is smoothed away; and the legs are left out, because hers are machinery the page
+ * builds.
  * Her hair here is only the swept-back base: the curls, headphones and flower are made by the page.
  */
 import fs from 'fs';
@@ -14,7 +16,7 @@ import { GLBBuilder } from '../glb-write.mjs';
 import { SRC, parseObj, macroBody, buildMesh, smoothNormals } from './mh.mjs';
 import { parseMhclo, loadProxyMesh, fitProxy, parseMhmat } from './mhclo.mjs';
 import { loadRig, repose, poseVertices, vertexWeights, proxyWeights, gameBones, foldWeights } from './rig.mjs';
-import { webp, bleed } from './tex.mjs';
+import { webp, bleed, raw } from './tex.mjs';
 
 const SYS = path.join(SRC, 'assets', 'makehuman_system_assets');
 const HEIGHT = 1.72;
@@ -148,7 +150,7 @@ function plated(v) {
 }
 
 const chromeOf = new Float32Array(nV);
-for (const v of used) chromeOf[v] = Math.max(0, Math.min(1, 0.5 + plated(v) * 28));
+for (const v of used) chromeOf[v] = Math.max(0, Math.min(1, 0.5 + plated(v) * 9));
 
 /* ------------------------------------------------------------- parts -- */
 
@@ -162,7 +164,16 @@ const proxy = (file) => {
 };
 const sys = (dir, name) => path.join(SYS, dir, name, name + '.mhclo');
 
-const bodyMesh = buildMesh(base, posed, (f) => f.g === bodyGroup);
+// everything below the top of the thigh goes; her arms hang beside it and must be kept
+const LEG = /^(hip|knee|ankle)[LR]$/;
+const cutY = joint('hipL')[1] - 0.035;
+const isLeg = (v) => {
+  const f = foldWeights(per[v], index);
+  let leg = 0;
+  f.joints.forEach((j, k) => { if (LEG.test(bones[j].name) || bones[j].name === 'hips') leg += f.weights[k]; });
+  return leg > 0.5 && posed[v * 3 + 1] < cutY;
+};
+const bodyMesh = buildMesh(base, posed, (f) => f.g === bodyGroup && !f.v.every(isLeg));
 const eyes = proxy(path.join(SRC, 'eyes', 'high-poly.mhclo'));
 const lashes = proxy(sys('eyelashes', 'eyelashes02'));
 const brows = proxy(sys('eyebrows', 'eyebrow008'));
@@ -183,8 +194,9 @@ const hair = proxy(sys('hair', 'ponytail01'));
 /* --------------------------------------------- place: facing -z, feet 0 -- */
 
 const meshes = [bodyMesh, eyes.mesh, lashes.mesh, brows.mesh, hair.mesh];
+// the feet are gone from the mesh, so the floor is taken from the whole body
 let floor = 1e9, top = -1e9;
-for (let i = 1; i < bodyMesh.P.length; i += 3) { floor = Math.min(floor, bodyMesh.P[i]); top = Math.max(top, bodyMesh.P[i]); }
+for (const v of used) { floor = Math.min(floor, posed[v * 3 + 1]); top = Math.max(top, posed[v * 3 + 1]); }
 const scale = HEIGHT / (top - floor);
 const place = (p) => [-p[0] * scale, (p[1] - floor) * scale, -p[2] * scale];
 for (const m of meshes) {
@@ -270,11 +282,45 @@ function meshNode(name, primitive) {
 
 const skinMat = material({ name: 'skin', pbrMetallicRoughness: {
   baseColorTexture: { index: tex(webp(path.join(SYS, SKIN), { size: 1024, quality: 84 })) }, metallicFactor: 0, roughnessFactor: 0.5 } });
+// how closely the hair lies over each point of the head, 1 under it fading to 0 at 18 mm
+// Only where strands are actually painted: the hair model reaches well past its visible hair, and
+// shading from its outline draws a cap on her forehead.
+const hairPoints = [];
+{
+  const m = parseMhmat(path.join(hair.mh.dir, hair.mh.material));
+  const size = 512, px = raw(path.join(hair.mh.dir, m.diffuseTexture), size, size, 'rgba');
+  const { P: hp, UV, I } = hair.mesh;
+  const steps = 10;
+  for (let t = 0; t < I.length; t += 3) {
+    for (let a = 0; a <= steps; a++) {
+      for (let c = 0; c <= steps - a; c++) {
+        const w = [a / steps, c / steps, 1 - (a + c) / steps];
+        const mix = (arr, n, k) => w[0] * arr[I[t] * n + k] + w[1] * arr[I[t + 1] * n + k] + w[2] * arr[I[t + 2] * n + k];
+        const x = Math.min(size - 1, Math.max(0, Math.floor((mix(UV, 2, 0) % 1) * size)));
+        const y = Math.min(size - 1, Math.max(0, Math.floor((mix(UV, 2, 1) % 1) * size)));
+        if (px[(y * size + x) * 4 + 3] > 140) hairPoints.push([mix(hp, 3, 0), mix(hp, 3, 1), mix(hp, 3, 2)]);
+      }
+    }
+  }
+}
+const neckPlaced = place(joint('neck'))[1];
+const hairNear = (x, y, z) => {
+  if (y < neckPlaced + 0.06) return 0;
+  let best = 1;
+  for (const p of hairPoints) {
+    const d = (p[0] - x) ** 2 + (p[1] - y) ** 2 + (p[2] - z) ** 2;
+    if (d < best) best = d;
+  }
+  return Math.max(0, Math.min(1, 1 - (Math.sqrt(best) - 0.004) / 0.014));
+};
 meshNode('body', prim(bodyMesh, per, skinMat, (mesh) => {
   // padded to four bytes per vertex, as vertex attributes must be
   const data = new Uint8Array(mesh.P.length / 3 * 4);
-  mesh.src.forEach((v, i) => { data[i * 4] = Math.round(chromeOf[v] * 255); });
-  return { _CHROME: b.accessor(data, 'SCALAR', 5121, { target: 34962, normalized: true, stride: 4, count: mesh.src.length }) };
+  mesh.src.forEach((v, i) => {
+    data[i * 4] = Math.round(chromeOf[v] * 255);
+    data[i * 4 + 1] = Math.round(255 * hairNear(mesh.P[i * 3], mesh.P[i * 3 + 1], mesh.P[i * 3 + 2]));
+  });
+  return { _CHROME: b.accessor(data, 'VEC2', 5121, { target: 34962, normalized: true, stride: 4, count: mesh.src.length }) };
 }));
 
 const eyeMat = material({ name: 'eye', alphaMode: 'MASK', alphaCutoff: 0.5, pbrMetallicRoughness: {
