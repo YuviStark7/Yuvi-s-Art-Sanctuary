@@ -2,27 +2,30 @@
  * Stark Museo — the wishing well, as a Cloudflare Worker.
  *
  * The only piece of this project that holds a secret, and the only part that takes input from
- * strangers. It does three things:
+ * strangers. It does four things:
  *
  *   intent  → open a Stripe payment for the one fixed amount and hand back a client secret
  *   wish    → ask Stripe whether that payment really succeeded, and only then write the wish down
  *   recent  → return approved wishes, if the gallery is showing them
+ *   letter  → keep an anonymous letter to the artist; always behind the bot check
  *
  * The browser is never believed: not about the amount, not about whether money changed hands.
  *
  * Bindings (see wrangler.jsonc and ../README.md):
- *   DB                 D1 database holding the wishes
+ *   DB                 D1 database holding the wishes and the letters
  *   LIMITER            rate limiter, optional
  *   ALLOWED_ORIGINS    comma-separated origins allowed to call; anything else is refused
  *   STRIPE_SECRET_KEY  secret
- *   TURNSTILE_SECRET   secret; required once the Stripe key is not a test key
+ *   TURNSTILE_SECRET   secret; required for letters, and once the Stripe key is not a test key
  */
 
 const AMOUNT = 200;                   // cents; the client does not get a say
 const CURRENCY = 'eur';
 const SOURCE = 'museo-coin';          // marks our payments, so no other payment can buy a wish
-const MAX_BODY = 4096;
+const MAX_BODY = 8192;               // room for a full letter and its bot-check token
 const MAX_WISH = 280;
+const MAX_LETTER = 1400;
+const MAX_LETTER_WORDS = 200;
 
 const origins = (env) => String(env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
 
@@ -73,13 +76,6 @@ export default {
     if (request.method === 'OPTIONS') return reply(null, 204, origin);
     if (request.method !== 'POST') return json({ error: 'POST only' }, 405);
 
-    const key = String(env.STRIPE_SECRET_KEY || '');
-    if (!key) return json({ error: 'The wishing well is not configured yet.' }, 503);
-    // a live key with no bot check would let a script test stolen cards against this account
-    if (!/^(sk|rk)_test_/.test(key) && !env.TURNSTILE_SECRET) {
-      return json({ error: 'The wishing well is not configured yet.' }, 503);
-    }
-
     if (env.LIMITER) {
       // the address only names a counter Cloudflare holds for a minute; it is never stored
       const { success } = await env.LIMITER.limit({ key: request.headers.get('CF-Connecting-IP') || 'unknown' });
@@ -96,7 +92,32 @@ export default {
     }
     if (!body || typeof body !== 'object') return json({ error: 'Malformed request' }, 400);
 
+    if (body.action !== 'letter') {
+      const key = String(env.STRIPE_SECRET_KEY || '');
+      if (!key) return json({ error: 'The wishing well is not configured yet.' }, 503);
+      // a live key with no bot check would let a script test stolen cards against this account
+      if (!/^(sk|rk)_test_/.test(key) && !env.TURNSTILE_SECRET) {
+        return json({ error: 'The wishing well is not configured yet.' }, 503);
+      }
+    }
+
     try {
+      if (body.action === 'letter') {
+        // free text from strangers: never without the check that a person is sending it
+        if (!env.TURNSTILE_SECRET) return json({ error: 'Letters are not open yet.' }, 503);
+        const text = String(body.text || '').trim();
+        if (!text) return json({ error: 'The letter is empty' }, 400);
+        if (text.length > MAX_LETTER || text.split(/\s+/).length > MAX_LETTER_WORDS) {
+          return json({ error: 'The letter is too long' }, 400);
+        }
+        if (!(await isPerson(env, body.turnstile, origin))) {
+          return json({ error: 'Could not confirm you are a person. Try again.' }, 403);
+        }
+        // the words and the time, nothing about who sent them
+        await env.DB.prepare('INSERT INTO letters (text) VALUES (?1)').bind(text).run();
+        return json({ ok: true });
+      }
+
       if (body.action === 'intent') {
         if (env.TURNSTILE_SECRET && !(await isPerson(env, body.turnstile, origin))) {
           return json({ error: 'Could not confirm you are a person. Try again.' }, 403);

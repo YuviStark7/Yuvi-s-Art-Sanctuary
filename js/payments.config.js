@@ -51,6 +51,25 @@ export const PAYMENTS = {
   showOthersWishes: false
 };
 
+/**
+ * Letters to the artist, written at her desk. In 'preview' nothing leaves the visitor's device and
+ * the panel says so. 'live' posts them to the same Worker as the coin (the `letter` action), which
+ * needs the new table and a deploy first: see cloudflare/README.md.
+ */
+export const LETTERS = {
+  mode: 'preview',
+  maxWords: 200
+};
+
+/** Words on the letter panel. */
+export const LETTER_COPY = {
+  preview: 'Preview: letters are not being sent yet.',
+  sending: 'sending…',
+  sent: 'Your letter is on its way. Thank you.',
+  previewSent: 'This is a preview, so nothing was sent.',
+  failed: 'Your letter could not be sent. It is still here; try again.'
+};
+
 /** Words on the coin panel. */
 export const WISHING_COPY = {
   prompt: 'Toss a coin',

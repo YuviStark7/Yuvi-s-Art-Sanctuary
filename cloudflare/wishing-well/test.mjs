@@ -94,10 +94,28 @@ assert.equal((await call({ action: 'recent' })).data.wishes.length, 0, 'unapprov
 sqlite.exec('UPDATE wishes SET approved = 1');
 assert.equal((await call({ action: 'recent' })).data.wishes.length, 1);
 
-assert.equal((await call('x'.repeat(5000))).status, 413);
+/* letters: never without the bot check, capped in words and length, nothing kept but the words */
+const letters = () => sqlite.prepare('SELECT * FROM letters').all();
+const open = { ...base, TURNSTILE_SECRET: 's' };
+const letter = (text, turnstile = 'person', env = open) => call({ action: 'letter', text, turnstile }, { env });
+assert.equal((await letter('hello', 'person', base)).status, 503, 'no bot check, no letters');
+assert.equal((await letter('hello', '')).status, 403);
+assert.equal((await letter('hello', 'bot')).status, 403);
+assert.equal((await letter('hello', 'elsewhere')).status, 403);
+assert.equal((await letter('   ')).status, 400);
+assert.equal((await letter('word '.repeat(201))).status, 400);
+assert.equal((await letter('a'.repeat(1401))).status, 400);
+assert.equal(letters().length, 0);
+assert.equal((await letter('word '.repeat(200))).status, 200);
+assert.equal((await letter('é'.repeat(1400), 'person', { ...open, STRIPE_SECRET_KEY: '' })).status, 200,
+  'letters do not depend on Stripe');
+assert.equal(letters().length, 2);
+assert.deepEqual(Object.keys(letters()[0]), ['id', 'created_at', 'text']);
+
+assert.equal((await call('x'.repeat(9000))).status, 413);
 assert.equal((await call('{nope')).status, 400);
 assert.equal((await call({ action: 'wish', paymentIntentId: 'pi_missing', text: 'x' })).status, 500);
 const full = { ...base, LIMITER: { limit: async () => ({ success: false }) } };
 assert.equal((await call({ action: 'intent' }, { env: full })).status, 429);
 
-process.stdout.write('wishing well: all checks passed\n');
+process.stdout.write('wishing well and letters: all checks passed\n');

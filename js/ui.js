@@ -4,7 +4,7 @@
  * reading panel for a work.
  */
 import { WARDROBE, FIGURE, FIGURES, figureById, WARDROBE_COPY } from './wardrobe.js';
-import { WISHING_COPY } from './payments.config.js';
+import { WISHING_COPY, LETTERS } from './payments.config.js';
 import { LOADING } from './config.js';
 
 const $ = (id) => document.getElementById(id);
@@ -27,6 +27,8 @@ export class UI {
     this.coinOpen = false;
     this.coinBusy = false;      // a payment is in flight: the panel may not be closed
     this.wishOpen = false;
+    this.letterOpen = false;
+    this.letterBusy = false;
 
     this.el = {
       loading: $('loading'), bar: $('bar-fill'), barTrack: $('bar'),
@@ -52,6 +54,10 @@ export class UI {
       wishText: $('wish-text'), wishCount: $('wish-count'),
       wishSend: $('wish-send'), wishSkip: $('wish-skip'),
 
+      letter: $('letter'), letterDemo: $('letter-demo'), letterText: $('letter-text'),
+      letterCount: $('letter-count'), letterGuard: $('letter-guard'), letterStatus: $('letter-status'),
+      letterSend: $('letter-send'), letterClose: $('letter-close'),
+
       viewer: $('viewer'), viewerImg: $('viewer-img'), viewerTitle: $('viewer-title'),
       viewerMeta: $('viewer-meta'), viewerNote: $('viewer-note'), viewerClose: $('viewer-close'),
       viewerPrice: $('viewer-price'), viewerBuy: $('viewer-buy'),
@@ -75,7 +81,7 @@ export class UI {
 
   get anyPanelOpen() {
     return this.gateOpen || this.wardrobeOpen || this.menuOpen ||
-           this.viewerOpen || this.coinOpen || this.wishOpen;
+           this.viewerOpen || this.coinOpen || this.wishOpen || this.letterOpen;
   }
 
   _wire() {
@@ -125,13 +131,22 @@ export class UI {
       if (h.onWishSkip) h.onWishSkip();
     });
 
+    /* ---- letter ---- */
+    e.letterText.addEventListener('input', () => this._countLetter());
+    e.letterSend.addEventListener('click', () => {
+      const text = e.letterText.value.trim();
+      if (text && !this.letterBusy && h.onLetterSend) h.onLetterSend(text);
+    });
+    e.letterClose.addEventListener('click', () => this.closeLetter());
+
     /* ---- touch action buttons ---- */
     e.tapUse.addEventListener('click', () => { if (h.onUse) h.onUse(); });
     e.tapAct.addEventListener('click', () => { if (h.onAction) h.onAction(); });
 
     window.addEventListener('keydown', (ev) => {
       if (ev.code !== 'Escape') return;
-      if (this.wishOpen) { this.closeWish(); if (h.onWishSkip) h.onWishSkip(); ev.preventDefault(); }
+      if (this.letterOpen) { this.closeLetter(); ev.preventDefault(); }
+      else if (this.wishOpen) { this.closeWish(); if (h.onWishSkip) h.onWishSkip(); ev.preventDefault(); }
       else if (this.coinOpen) { dismissCoin(); ev.preventDefault(); }
       else if (this.viewerOpen) { this.closeViewer(); ev.preventDefault(); }
     });
@@ -351,7 +366,7 @@ export class UI {
     const use = list.find((p) => p.key === 'G');
     const act = list.find((p) => p.key === 'F' || p.key === 'E');
     this.el.tapUse.classList.toggle('hidden', !use);
-    if (use) this.el.tapUse.textContent = use.label;
+    if (use) this.el.tapUse.textContent = use.short || use.label;
     this.el.tapAct.classList.toggle('hidden', !act);
     if (act) {
       this.el.tapAct.textContent = act.label;
@@ -444,6 +459,56 @@ export class UI {
     this.wishOpen = false;
     this.el.wish.classList.add('hidden');
     this.el.hud.classList.remove('hidden');
+  }
+
+  /* ------------------------------------------------------------- letter */
+
+  /** What has been typed stays until it is sent, so closing by mistake loses nothing. */
+  openLetter(notice) {
+    const e = this.el;
+    e.letterDemo.textContent = notice || '';
+    e.letterDemo.classList.toggle('hidden', !notice);
+    this.letterBusy = false;
+    this.setLetterStatus('');
+    this._countLetter();
+    this.letterOpen = true;
+    e.letter.classList.remove('hidden');
+    this._replay(e.letter.querySelector('.plate'));
+    e.hud.classList.add('hidden');
+    setTimeout(() => { if (this.letterOpen) e.letterText.focus(); }, 420);
+    if (this.h.onPanelOpen) this.h.onPanelOpen();
+  }
+
+  _countLetter() {
+    const e = this.el;
+    const words = e.letterText.value.split(/\s+/).filter(Boolean).length;
+    e.letterCount.textContent = String(words);
+    e.letterCount.parentNode.classList.toggle('over', words > LETTERS.maxWords);
+    e.letterSend.disabled = this.letterBusy || words === 0 || words > LETTERS.maxWords;
+  }
+
+  setLetterStatus(text, bad) {
+    this.el.letterStatus.textContent = text || '';
+    this.el.letterStatus.classList.toggle('bad', !!bad);
+  }
+
+  setLetterBusy(busy) {
+    this.letterBusy = !!busy;
+    this._countLetter();
+  }
+
+  clearLetter() {
+    this.el.letterText.value = '';
+    this._countLetter();
+  }
+
+  closeLetter() {
+    if (!this.letterOpen) return;
+    this.letterOpen = false;
+    this.el.letterText.blur();
+    this.el.letter.classList.add('hidden');
+    this.el.hud.classList.remove('hidden');
+    if (this.h.onLetterClosed) this.h.onLetterClosed();
   }
 
   /* ------------------------------------------------------------- viewer */

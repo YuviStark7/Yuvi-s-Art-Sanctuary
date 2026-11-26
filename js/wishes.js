@@ -18,7 +18,7 @@
  * will not open it any other way. The payment is only created on the server
  * after the visitor has approved it in the sheet.
  */
-import { PAYMENTS, WISHING_COPY } from './payments.config.js';
+import { PAYMENTS, WISHING_COPY, LETTERS } from './payments.config.js';
 
 // The button is loaded as a visitor walks in, before they have asked to pay, so Stripe's "advanced
 // fraud signals" are switched off: with them on, the script sets two cookies as it loads, which
@@ -323,6 +323,54 @@ export class WishingWell {
       const data = await this._call('recent', { limit: limit || 8 });
       return data.wishes || [];
     } catch (e) { return []; }
+  }
+
+  /* ------------------------------------------------- letters to the artist */
+
+  /** True when letters really are posted to the Worker. */
+  get posting() {
+    return LETTERS.mode === 'live' && !!PAYMENTS.endpoint && !!PAYMENTS.turnstileSiteKey;
+  }
+
+  /** Sets the bot check up in `box` while someone writes. */
+  openLetter(box) {
+    this.closeLetter();
+    if (!this.posting) return;
+    let gone = false, widget = null;
+    const check = this._botCheck(box, {
+      remember: (id) => { widget = id; }, isGone: () => gone, changed: () => {}, failed: () => {}
+    });
+    this._letter = {
+      check,
+      down: () => {
+        gone = true;
+        if (widget !== null && window.turnstile) window.turnstile.remove(widget);
+        box.textContent = '';
+      }
+    };
+  }
+
+  closeLetter() {
+    if (this._letter) this._letter.down();
+    this._letter = null;
+  }
+
+  /** In preview nothing is sent or kept anywhere. */
+  async sendLetter(text) {
+    if (!this.posting) {
+      await new Promise((r) => setTimeout(r, 500));
+      return { ok: true, preview: true };
+    }
+    const letter = this._letter;
+    try {
+      const turnstile = await letter.check.token();
+      await this._call('letter', { text, turnstile });
+      return { ok: true };
+    } catch (err) {
+      console.warn('[Stark Museo] letter not sent:', err.message);
+      if (letter) letter.check.reset();
+      return { ok: false };
+    }
   }
 
   /** '€2', in the visitor's own formatting. */

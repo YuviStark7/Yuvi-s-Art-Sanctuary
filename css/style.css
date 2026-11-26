@@ -710,7 +710,7 @@ div.coin-price, div.coin-price:hover { border-color: transparent; background: no
 /* ================================================================ wish == */
 
 .wish-field { display: block; position: relative; margin-bottom: 6px; }
-#wish-text {
+#wish-text, #letter-text {
   width: 100%;
   padding: 15px 16px 26px;
   background: rgba(230, 226, 217, 0.05);
@@ -724,8 +724,13 @@ div.coin-price, div.coin-price:hover { border-color: transparent; background: no
   outline: none;
   transition: border-color 0.3s ease;
 }
-#wish-text::placeholder { color: rgba(161,156,146,0.5); font-style: italic; }
-#wish-text:focus { border-color: rgba(230,226,217,0.42); }
+#wish-text::placeholder, #letter-text::placeholder { color: rgba(161,156,146,0.5); font-style: italic; }
+#wish-text:focus, #letter-text:focus { border-color: rgba(230,226,217,0.42); }
+#letter .plate { max-height: 100%; overflow-y: auto; }
+#letter .wish-count.over { color: #e0a89a; }
+#letter-status { min-height: 17px; margin: 10px 0 12px; }
+#letter-status.bad { color: #e0a89a; }
+#letter-send:disabled { opacity: 0.4; cursor: default; transform: none; }
 .wish-count {
   position: absolute;
   right: 12px; bottom: 8px;

@@ -26,7 +26,7 @@ import { Ambience } from './audio.js';
 import { UI } from './ui.js';
 import { ARTWORKS, EXHIBITION } from './artworks.js';
 import { DEFAULT_OUTFIT, WARDROBE, FIGURES, figureById } from './wardrobe.js';
-import { PAYMENTS, WISHING_COPY } from './payments.config.js';
+import { PAYMENTS, WISHING_COPY, LETTER_COPY } from './payments.config.js';
 import { Governor } from './governor.js';
 
 /* ------------------------------------------------------------- quality -- */
@@ -509,7 +509,9 @@ function updatePrompts() {
   else if (nearHer()) list.push({ key: 'E', label: ambience.beating ? 'quiet her heart' : 'hear her heart' });
   if (atTheWater()) list.push({ key: 'F', label: 'toss a coin', kind: 'coin' });
   const verb = character && character.handVerb;
-  if (verb && !character.busy) list.push({ key: 'G', label: verb });
+  // at her desk the second button writes a letter; elsewhere it is whatever is in the hand
+  if (nearHer()) list.push({ key: 'G', label: 'write to the artist', short: 'write' });
+  else if (verb && !character.busy) list.push({ key: 'G', label: verb });
   ui.setPrompts(list);
 }
 
@@ -523,6 +525,33 @@ function nearHer() {
 function toggleHeart() {
   if (!nearHer() || ui.anyPanelOpen) return;
   ambience.heartbeat(!ambience.beating, app.world.studios[0].heartAt, elapsed % BEAT);
+}
+
+/** G, or the second round button: a letter at her desk, otherwise what the visitor is holding. */
+function useOrWrite() {
+  if (nearHer()) openLetterPanel();
+  else useHeldItem();
+}
+
+function openLetterPanel() {
+  if (app.mode !== 'visit' || ui.anyPanelOpen || !nearHer() || (tour && tour.active)) return;
+  player.enabled = false;
+  ui.openLetter(well.posting ? '' : LETTER_COPY.preview);
+  well.openLetter(ui.el.letterGuard);
+}
+
+let lettersSent = 0;
+
+async function sendLetter(text) {
+  ui.setLetterBusy(true);
+  ui.setLetterStatus(LETTER_COPY.sending);
+  const res = await well.sendLetter(text);
+  ui.setLetterBusy(false);
+  if (!res.ok) { ui.setLetterStatus(LETTER_COPY.failed, true); return; }
+  ui.clearLetter();
+  ui.setLetterStatus(res.preview ? LETTER_COPY.previewSent : LETTER_COPY.sent);
+  const mine = ++lettersSent;
+  setTimeout(() => { if (mine === lettersSent) ui.closeLetter(); }, 2200);
 }
 
 function openFocused() {
@@ -668,7 +697,9 @@ const ui = new UI({
     if (character) character.setOutfit(app.outfit);
     startTour();
   },
-  onUse: () => useHeldItem(),
+  onUse: () => useOrWrite(),
+  onLetterSend: (text) => sendLetter(text),
+  onLetterClosed: () => { lettersSent++; well.closeLetter(); player.enabled = true; player.requestLock(); },
   onAction: () => {
     if (focused) openFocused();
     else if (atTheWater()) openCoinPanel();
@@ -706,7 +737,7 @@ player.onInteract = () => {
   if (focused) openFocused();
   else toggleHeart();
 };
-player.onUse = () => useHeldItem();
+player.onUse = () => useOrWrite();
 player.onSecondary = () => openCoinPanel();
 
 /* --------------------------------------------------------- the wardrobe -- */

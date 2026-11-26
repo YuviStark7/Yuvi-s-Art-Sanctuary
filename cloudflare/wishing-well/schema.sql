@@ -22,3 +22,11 @@ CREATE TABLE IF NOT EXISTS wishes (
 );
 
 CREATE INDEX IF NOT EXISTS wishes_approved_idx ON wishes (approved, created_at DESC);
+
+-- Letters to the artist, written at the desk. Anonymous by design: the words and the time, no
+-- name, no email, no address, no IP. Nothing in the Worker reads them back to a browser.
+CREATE TABLE IF NOT EXISTS letters (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+  text        TEXT    NOT NULL CHECK (length(text) BETWEEN 1 AND 1400)
+);

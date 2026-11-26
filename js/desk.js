@@ -209,7 +209,7 @@ const HUD_VERTEX = /* glsl */`
   }`;
 
 const HUD_FRAGMENT = /* glsl */`
-  uniform float uTime, uAspect, uKind, uSeed;
+  uniform float uTime, uAspect, uKind, uSeed, uShow;
   varying vec2 vUv;
 
   float hash( vec2 p ) { return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453 ); }
@@ -274,10 +274,10 @@ const HUD_FRAGMENT = /* glsl */`
     }
 
     a *= 0.86 + 0.14 * sin( vUv.y * 260.0 - uTime * 5.0 );       // scan lines
-    gl_FragColor = vec4( vec3( 1.0, 0.80, 0.58 ) * a * 1.25, 1.0 );
+    gl_FragColor = vec4( vec3( 1.0, 0.80, 0.58 ) * a * 1.25 * uShow, 1.0 );
   }`;
 
-function addHolograms(group, at, desk, turn, animated) {
+function addHolograms(group, at, desk, turn, animated, replaced) {
   //        side   height  deeper  width  height  kind
   const panels = [
     [-1.80, 2.12, 1.30, 1.40, 0.86, 0],
@@ -287,8 +287,11 @@ function addHolograms(group, at, desk, turn, animated) {
   ];
   panels.forEach(([side, y, deeper, w, h, kind], i) => {
     const uniforms = {
-      uTime: { value: 0 }, uAspect: { value: w / h }, uKind: { value: kind }, uSeed: { value: i * 17.3 }
+      uTime: { value: 0 }, uAspect: { value: w / h }, uKind: { value: kind }, uSeed: { value: i * 17.3 },
+      uShow: { value: 1 }
     };
+    // the two waveforms give way to the invitations when a visitor arrives
+    if (kind === 0) replaced.push(uniforms.uShow);
     const panel = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.ShaderMaterial({
       uniforms, vertexShader: HUD_VERTEX, fragmentShader: HUD_FRAGMENT,
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
@@ -305,7 +308,7 @@ function addHolograms(group, at, desk, turn, animated) {
 /* --------------------------------------------------------------- build -- */
 
 /**
- * @returns {{group, reflective, animated}} `reflective` are the materials that should mirror the
+ * @returns {{group, reflective, animated, replaced}} `reflective` are the materials that should mirror the
  * room once it has been captured; `animated` are uniforms that want the clock.
  */
 export function buildDesk(chamber, textures) {
@@ -316,6 +319,7 @@ export function buildDesk(chamber, textures) {
   // turns a thing so that its local +z faces the visitor
   const turn = Math.atan2(-chamber.forward.x, -chamber.forward.z);
   const animated = [];
+  const replaced = [];
 
   const metal = tame(new THREE.MeshStandardMaterial({
     color: 0xd9d6d2, metalness: 1.0, roughness: 0.46, roughnessMap: brushed(), side: THREE.DoubleSide
@@ -364,7 +368,7 @@ export function buildDesk(chamber, textures) {
   kit.scale.setScalar(1.28);
   kit.position.copy(middle).multiplyScalar(1 - 1.28);
   group.add(kit);
-  addHolograms(group, at, desk, turn, animated);
+  addHolograms(group, at, desk, turn, animated, replaced);
 
-  return { group, reflective: [metal], animated };
+  return { group, reflective: [metal], animated, replaced };
 }

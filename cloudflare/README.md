@@ -117,6 +117,26 @@ root of this repository.
    while `js/wishes.js` loads it with `advancedFraudSignals=false`.
 4. Pay one real coin from your own phone, then refund it in Stripe.
 
+## Letters to the artist
+
+Written at the desk in the arched room: anonymous, 200 words at most. Only the words and the time
+are kept. While `LETTERS.mode` in `js/payments.config.js` is `'preview'`, nothing is sent and the
+panel says so. To open them, from `cloudflare/wishing-well`:
+
+```bash
+npx wrangler d1 execute museo-wishes --remote --file=schema.sql
+npx wrangler deploy
+```
+
+(The first command only adds the missing `letters` table.) Then set `mode: 'live'` under `LETTERS`.
+The Worker refuses letters unless `TURNSTILE_SECRET` is set. Name letters in the privacy page.
+
+Read them in Cloudflare dashboard → D1 → `museo-wishes` → Console:
+
+```sql
+SELECT id, created_at, text FROM letters ORDER BY created_at DESC;
+```
+
 ## Reading the wishes
 
 Cloudflare dashboard → D1 → `museo-wishes` → Console:

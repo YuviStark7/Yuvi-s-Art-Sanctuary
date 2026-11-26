@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { buildDesk, TOP } from './desk.js';
 import { buildCyborg } from './cyborg.js';
 import { buildSteelSky } from './cyborg.body.js';
+import { buildInvitations } from './invitations.js';
 
 const GLOW = new THREE.Color(1.0, 0.62, 0.30);
 
@@ -53,6 +54,10 @@ export function buildStudio(chamber, textures, quality) {
   group.add(mirrored);
   chamber.floorMaterial.transparent = true;
   chamber.floorMaterial.opacity = 0.92;
+
+  /* ---- the invitations, which come up over two of the holograms ---- */
+  const invitations = buildInvitations(chamber, desk.replaced);
+  group.add(invitations.group);
 
   /* ---- light: as many lamps as the two old side rooms had, so the hall costs the same ---- */
   const lights = [];
@@ -128,9 +133,14 @@ export function buildStudio(chamber, textures, quality) {
       studio.dj = dj;
       group.add(dj.group);
     },
-    update(t, visitor) { if (studio.dj) studio.dj.update(t, visitor); },
+    update(t, visitor) {
+      if (studio.dj) studio.dj.update(t, visitor);
+      const far = visitor ? Math.hypot(visitor.x - studio.heartAt.x, visitor.z - studio.heartAt.z) : Infinity;
+      invitations.update(t, Math.max(0, Math.min(1, (5.4 - far) / 1.2)));
+    },
     dispose() {
       studio.gone = true;
+      invitations.dispose();
       if (studio.dj) { studio.dj.group.removeFromParent(); studio.dj.dispose(); }
       if (probe) probe.dispose();
       if (steel) steel.dispose();
