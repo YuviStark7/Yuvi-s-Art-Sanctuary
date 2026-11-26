@@ -417,8 +417,15 @@ export async function buildCyborg(chamber, probe, surface) {
       bloom.update(t, pulse);
     },
     dispose() {
-      // her geometry and textures belong to the model cache; only what was made here goes
-      for (const m of [...own, chrome, dark, glow, hairMat]) m.dispose();
+      // her body's geometry and textures belong to the model cache; what was made here goes
+      const mine = new Set([...own, chrome, dark, glow, hairMat]);
+      root.traverse((o) => {
+        if (!o.isMesh || o.userData.shared) return;
+        o.geometry.dispose();
+        mine.add(o.material);
+        if (o.isInstancedMesh) o.dispose();
+      });
+      for (const m of mine) m.dispose();
     }
   };
 }
