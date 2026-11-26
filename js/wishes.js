@@ -93,16 +93,17 @@ export class WishingWell {
    */
   prepareWallet(box, guardBox) {
     if (!this.live || this._wallet) return;
-    const w = this._wallet = { box, guardBox, state: 'loading', text: '', hooks: null, spent: false };
+    // `held`: a payment's outcome is on screen and later state changes must not wipe it
+    const w = this._wallet = { box, guardBox, state: 'loading', text: '', hooks: null, spent: false, held: false };
     const tell = (name, ...args) => { if (w.hooks) w.hooks[name](...args); };
     box.classList.remove('hidden');
     w.down = this.mountWallet(box, guardBox, {
-      ready: () => { w.state = 'ready'; tell('ready'); },
-      checking: () => { w.state = 'checking'; tell('checking'); },
+      ready: () => { w.state = 'ready'; if (!w.held) tell('ready'); },
+      checking: () => { w.state = 'checking'; if (!w.held) tell('checking'); },
       unavailable: (text) => { w.state = 'unavailable'; w.text = text; tell('unavailable', text); },
-      busy: () => tell('busy'),
+      busy: () => { w.held = true; tell('busy'); },
       paid: (id) => { w.spent = true; tell('paid', id); },
-      stopped: (text, bad) => tell('stopped', text, bad)
+      stopped: (text, bad) => { w.held = true; tell('stopped', text, bad); }
     });
   }
 
@@ -113,6 +114,7 @@ export class WishingWell {
     this.prepareWallet(box, guardBox);
     const w = this._wallet;
     w.hooks = hooks;
+    w.held = false;
     if (w.state === 'ready') hooks.ready();
     else if (w.state === 'checking') hooks.checking();
     else if (w.state === 'unavailable') hooks.unavailable(w.text);
@@ -147,7 +149,7 @@ export class WishingWell {
    */
   mountWallet(box, guardBox, hooks) {
     let gone = false, express = null, widget = null, patience = 0;
-    let walletUp = false, announced = false, check = null;
+    let walletUp = false, check = null;
 
     const unavailable = (text) => {
       if (gone) return;
@@ -161,9 +163,9 @@ export class WishingWell {
       if (gone || !check) return;
       const person = check.passed();
       box.style.visibility = person ? '' : 'hidden';
-      if (!walletUp || announced) return;
-      if (person) { announced = true; hooks.ready(); }
-      else hooks.checking();
+      if (!walletUp) return;
+      if (person) hooks.ready();
+      else hooks.checking();          // also when a token expires while the visitor strolls
     };
     check = this._botCheck(guardBox, {
       remember: (id) => { widget = id; },
