@@ -134,6 +134,26 @@ export const OCCLUSION = {
   strength: 0.55
 };
 
+/* The tooth on the plaster, seen from arm's length.
+ *
+ * The wall photograph repeats every couple of metres, which is right for the room and soft for a
+ * visitor standing at it. This reads its brightness a second time at a fraction of the size, close
+ * to the lens, and turns it into relief, so there is still grain at half a metre. Only the relief is
+ * doubled, never the colour: a fine tile of the stains would read as a pattern.
+ *
+ * It is drawn only where it can be seen. Past `fadeFar` the tile is finer than the pixels
+ * covering it and would shimmer, so it fades out and its three texture reads stop being issued.
+ * `tile` is one repeat in metres, `strength` how far it tilts the surface, the distances are from
+ * the lens. `strength: 0` turns it off everywhere; the `concreteDetail` preset flag turns it off
+ * per quality level.
+ */
+export const CONCRETE_DETAIL = {
+  tile: 0.5,
+  strength: 3.0,
+  fadeNear: 1.6,
+  fadeFar: 4.5
+};
+
 /**
  * How the loading screen behaves while it waits on something slow.
  *

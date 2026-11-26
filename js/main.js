@@ -33,7 +33,7 @@ const QUALITY = {
     shellRings: 150, shellSegments: 352,
     floorReflection: true, reflectionSize: 1024,
     bloom: true, bloomStrength: 0.34,
-    shadowMap: 4096, chamberShadows: true, roomAO: true,
+    shadowMap: 4096, chamberShadows: true, roomAO: true, concreteDetail: true,
     mist: 1100, msaa: 4, maxPixelRatio: 2,
     artworkGlow: 0.05, shafts: 4, canopyLayers: 2, canopyTranslucency: true, dapple: true, caustics: true
   },
@@ -41,7 +41,7 @@ const QUALITY = {
     shellRings: 118, shellSegments: 280,
     floorReflection: true, reflectionSize: 512,
     bloom: true, bloomStrength: 0.30,
-    shadowMap: 2048, chamberShadows: false, roomAO: true,
+    shadowMap: 2048, chamberShadows: false, roomAO: true, concreteDetail: true,
     mist: 650, msaa: 0, maxPixelRatio: 1.5,
     artworkGlow: 0.07, shafts: 3, canopyLayers: 2, canopyTranslucency: true, dapple: true, caustics: true
   },
@@ -49,7 +49,7 @@ const QUALITY = {
     shellRings: 86, shellSegments: 208,
     floorReflection: false, reflectionSize: 256,
     bloom: false, bloomStrength: 0,
-    shadowMap: 1024, chamberShadows: false, roomAO: false,
+    shadowMap: 1024, chamberShadows: false, roomAO: false, concreteDetail: false,
     mist: 260, msaa: 0, maxPixelRatio: 1,
     artworkGlow: 0.12, shafts: 2, canopyLayers: 1, canopyTranslucency: false, dapple: false, caustics: false
   }

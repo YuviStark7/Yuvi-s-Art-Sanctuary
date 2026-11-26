@@ -25,13 +25,6 @@ when you merge the PR, so read the PR's "could not verify" notes first.
 Both of these add per-frame GPU cost, and the site is currently being made
 lighter. They come back once frame time has headroom again.
 
-### A detail normal on the wall, up close
-The wall is a photograph of plaster now (see Done), which has real grain at a
-walk-up distance, but it carries no normal map: the shell's triplanar shader
-reads a colour map and a roughness map only, and a triplanar normal costs three
-more reads on the 4 ms surface. If walking up to a wall still looks flat, add
-one, high preset only, fading in with distance.
-
 ### Real reflection and refraction in the pool
 The water currently uses an analytic reflection — a pale dome with the oculus
 punched into it — rather than a true reflection pass. Upgrade it. (The caustics
@@ -48,6 +41,16 @@ and moving light should play across the basin floor.
 ## Done
 
 *(the routine moves items here with a one-line note and the PR number)*
+
+### Grain on the wall, up close
+Within about 4.5 m the wall's photograph is read again at 0.5 m and turned into
+relief by screen-space derivatives (`addDetailNormal` in `js/architecture.js`,
+tuned by `CONCRETE_DETAIL`; off at the low preset). It replaces the old
+"detail normal" idea, which assumed the plaster shipped a normal map worth
+using: it does not, its relief is a standard deviation of about one level in
+255. Measured on the wall at 1280x960 the cost is within noise (about 5.2 to
+6.3 ms either way). Seen once, with the strength at 3; look at it walking
+along a wall and say if it reads as plaster or as felt.
 
 ### The room's surfaces, light and planting
 The wall, floor and rock are Poly Haven photographs (CC0), fetched and graded by
