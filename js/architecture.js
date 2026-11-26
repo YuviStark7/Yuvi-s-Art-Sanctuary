@@ -900,7 +900,7 @@ export function buildSanctuary(textures, quality) {
   const night = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
   night.needsUpdate = true;
   const studioFloorMat = new THREE.MeshStandardMaterial({
-    color: 0xffdcba, map: textures.floor.map, roughness: 0.28, metalness: 0.1, envMap: night
+    color: 0x9c826c, map: textures.floor.map, roughness: 0.12, metalness: 0.2, envMap: night
   });
 
   const chambers = [];
@@ -981,7 +981,7 @@ export function buildSanctuary(textures, quality) {
     group.add(chFloor);
 
     chambers.push({
-      spec, forward, right, origin, base, at, back, front, lip: rv.inner,
+      spec, forward, right, origin, base, at, back, front, lip: rv.inner, floorMaterial: studioFloorMat,
       centre: origin.clone().addScaledVector(forward, spec.depth / 2)
     });
   }

@@ -1,10 +1,11 @@
 /**
  * The warm room behind the wide arch: the one place in the building that is not daylight.
  *
- * `chamber` comes from buildSanctuary. Positions here are given as (side, height, forward):
+ * The desk itself is desk.js. `chamber` comes from buildSanctuary. Positions here are given as (side, height, forward):
  * metres to the right of the room's axis, above the floor, and beyond the hall's wall.
  */
 import * as THREE from 'three';
+import { buildDesk } from './desk.js';
 
 const GLOW = new THREE.Color(1.0, 0.62, 0.30);
 
@@ -37,26 +38,19 @@ export function buildStudio(chamber, textures, quality) {
   line(foot(right, 0.75), foot(right, back - 0.05));
   line(foot(left, back - 0.05), foot(right, back - 0.05));
 
-  /* ---- the desk: a stand-in for scale, until the real one is built ---- */
-  const stone = new THREE.MeshStandardMaterial({
-    color: 0xa8896a, map: textures.rock.map, normalMap: textures.rock.normalMap, roughness: 0.85
-  });
-  const metal = new THREE.MeshStandardMaterial({ color: 0xb9ada0, roughness: 0.34, metalness: 0.9 });
+  /* ---- the desk, the decks and the holograms ---- */
+  const desk = buildDesk(chamber, textures);
+  group.add(desk.group);
 
-  for (const [side, w, h] of [[-0.95, 1.5, 0.82], [1.15, 1.1, 0.82]]) {
-    const geo = new THREE.DodecahedronGeometry(0.5, 0);
-    geo.scale(w, h * 1.1, 0.8);
-    const rock = new THREE.Mesh(geo, stone);
-    rock.position.copy(at(side, h * 0.4, spec.desk));
-    rock.rotation.y = -spec.around + side * 0.5;
-    rock.castShadow = rock.receiveShadow = true;
-    group.add(rock);
-  }
-  const top = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.24, 4.4), metal);
-  top.position.copy(at(0, 0.98, spec.desk));
-  top.rotation.y = -spec.around;
-  top.castShadow = top.receiveShadow = true;
-  group.add(top);
+  // the polished floor's reflection: the desk again, upside down under a slightly clear floor.
+  // Far cheaper than a mirror pass, which would draw the whole building a third time.
+  const mirrored = desk.group.clone();
+  mirrored.name = 'desk-reflection';
+  mirrored.scale.y = -1;
+  mirrored.traverse((o) => { o.castShadow = o.receiveShadow = false; });
+  group.add(mirrored);
+  chamber.floorMaterial.transparent = true;
+  chamber.floorMaterial.opacity = 0.92;
 
   /* ---- light: as many lamps as the two old side rooms had, so the hall costs the same ---- */
   const lights = [];
@@ -76,5 +70,49 @@ export function buildStudio(chamber, textures, quality) {
   }
   lamp(0, 0.35, back - 0.35, 0, 3.0, back - 0.1, 16, 1.2);      // washes up the back wall
 
-  return { group, lights };
+  /**
+   * One look around from where she will stand, so the metal and the polished floor mirror this
+   * warm room and not the bright hall the rest of the building reflects. Done once, at load.
+   */
+  let probe = null;
+  const capture = (renderer, scene) => {
+    const target = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType });
+    const camera = new THREE.CubeCamera(0.05, 60, target);
+    camera.position.copy(at(0, 1.5, spec.desk - 0.9));
+    scene.add(camera);
+    const cards = new THREE.Group();
+    const card = (side, y, f, w, h, power) => {
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({
+        color: new THREE.Color(1.0, 0.86, 0.70).multiplyScalar(power), side: THREE.DoubleSide
+      }));
+      mesh.position.copy(at(side, y, f));
+      mesh.lookAt(camera.position);
+      cards.add(mesh);
+    };
+    card(0, 3.5, spec.desk - 1.2, 4.5, 0.5, 3.0);       // a strip overhead
+    card(-3.2, 1.7, spec.desk - 2.2, 0.5, 2.2, 2.2);    // one upright to each side, out front
+    card(3.2, 1.7, spec.desk - 2.2, 0.5, 2.2, 1.4);
+    card(0, 0.25, spec.desk - 2.8, 6.0, 0.35, 0.9);     // the bright hall's floor, low down
+    scene.add(cards);
+
+    desk.group.visible = mirrored.visible = false;
+    renderer.shadowMap.needsUpdate = true;
+    camera.update(renderer, scene);
+    desk.group.visible = mirrored.visible = true;
+    scene.remove(camera, cards);
+    cards.traverse((o) => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    probe = pmrem.fromCubemap(target.texture);
+    pmrem.dispose();
+    target.dispose();
+    for (const material of [...desk.reflective, chamber.floorMaterial]) {
+      material.envMap = probe.texture;
+      material.needsUpdate = true;
+    }
+    desk.reflective.forEach((m) => { m.envMapIntensity = 1.5; });
+    renderer.shadowMap.needsUpdate = true;
+  };
+
+  return { group, lights, animated: desk.animated, capture, dispose: () => probe && probe.dispose() };
 }

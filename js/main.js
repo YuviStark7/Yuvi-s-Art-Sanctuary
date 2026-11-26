@@ -285,6 +285,7 @@ function disposeWorld() {
 
   scene.remove(app.world.root);
   if (app.world.envTarget) app.world.envTarget.dispose();
+  for (const studio of app.world.studios || []) studio.dispose();
   scene.environment = null;
   app.world = null;
   app.animated = [];
@@ -374,8 +375,13 @@ function buildWorld(quality) {
   const gallery = buildGallery(app.artworks, app.artworkTextures, app.textures, sanctuary.chambers, quality);
   root.add(gallery.group);
 
+  const studios = [];
   for (const chamber of sanctuary.chambers) {
-    if (chamber.spec.desk) root.add(buildStudio(chamber, app.textures, quality).group);
+    if (!chamber.spec.desk) continue;
+    const studio = buildStudio(chamber, app.textures, quality);
+    root.add(studio.group);
+    animated.push(...studio.animated);
+    studios.push(studio);
   }
 
   scene.add(root);
@@ -390,6 +396,9 @@ function buildWorld(quality) {
   app.animated = animated;
 
   captureEnvironment(quality);
+  // after the hall's own capture, so the warm room is seen lit as visitors will see it
+  for (const studio of studios) studio.capture(renderer, scene);
+  app.world.studios = studios;
   renderer.shadowMap.needsUpdate = true;
 
   tour = new Tour(player, defaultStops(gallery.interactables, rimY));

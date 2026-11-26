@@ -232,7 +232,7 @@ export class Player {
       const forward = dx * c + dz * s;
       const side = dx * -s + dz * c;
       // visitors stay in front of a desk; the camera may go past it
-      const deepest = a.desk ? a.desk - 0.55 - pr : a.depth + HALL.shellThickness - 0.45;
+      const deepest = a.desk ? a.desk - 0.72 - pr : a.depth + HALL.shellThickness - 0.45;
       if (forward > -1.5 && forward < deepest &&
           Math.abs(side) < a.width / 2 - pr + 0.02) {
         return true;
