@@ -6,7 +6,7 @@
 
   "vars": {
     // Only these sites may call the Worker.
-    "ALLOWED_ORIGINS": "https://museo.yuvistark.com,https://yuvistark7.github.io"
+    "ALLOWED_ORIGINS": "https://museo.yuvistark.com"
   },
 
   // database_id is printed by `npx wrangler d1 create museo-wishes`

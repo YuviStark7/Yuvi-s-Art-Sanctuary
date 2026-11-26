@@ -61,6 +61,7 @@ export const WISHING_COPY = {
   toss: 'toss',
   price: 'one coin',
   loading: 'finding your wallet…',
+  checking: 'one moment, making sure you are a person…',
   paying: 'a moment…',
   cancelled: 'No coin, then. Whenever you like.',
   wishTitle: 'Make your wish',
