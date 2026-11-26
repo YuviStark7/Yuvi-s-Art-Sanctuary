@@ -54,6 +54,7 @@ export class UI {
 
       viewer: $('viewer'), viewerImg: $('viewer-img'), viewerTitle: $('viewer-title'),
       viewerMeta: $('viewer-meta'), viewerNote: $('viewer-note'), viewerClose: $('viewer-close'),
+      viewerPrice: $('viewer-price'), viewerBuy: $('viewer-buy'),
       menu: $('menu'), resume: $('resume'), menuTour: $('menu-tour'), menuReset: $('menu-reset'),
       quality: $('opt-quality'), volume: $('opt-volume'), sens: $('opt-sens'),
       fov: $('opt-fov'), invert: $('opt-invert'),
@@ -463,6 +464,13 @@ export class UI {
     e.viewerMeta.textContent = bits.join('  ·  ');
     e.viewerNote.textContent = art.note || '';
     e.viewerNote.style.display = art.note ? '' : 'none';
+
+    // only works from the shop have a price; a sold one has no button
+    e.viewerPrice.textContent = art.price ? (art.available ? art.price : 'Sold') : '';
+    e.viewerPrice.classList.toggle('hidden', !art.price);
+    e.viewerBuy.classList.toggle('hidden', !art.buyUrl);
+    if (art.buyUrl) e.viewerBuy.href = art.buyUrl;
+    else e.viewerBuy.removeAttribute('href');
 
     this.viewerOpen = true;
     e.viewer.classList.remove('hidden');

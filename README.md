@@ -23,6 +23,16 @@ code, so the whole thing is about a megabyte.
 
 ## Hanging your own work
 
+**With Shopify (how it is set up):** put works in the **Museo** collection in
+Shopify admin. They hang on the next visit, framed, at their true size, with
+price, "Sold" and a Buy button that opens your Shopify checkout. Nothing here
+needs editing. Write the size in the product description as `21 × 29.8 cm`, and
+keep photos as a sheet on a white backdrop, so its edges can be found. Settings,
+including the width of the mat, are in [`js/shop.config.js`](js/shop.config.js).
+
+**Without the shop** (if `collection` is empty, or Shopify cannot be reached),
+the room hangs the list in `artworks.js`:
+
 **This is the only file you need to touch: [`js/artworks.js`](js/artworks.js).**
 
 1. Put your image files in the `artworks/` folder.

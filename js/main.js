@@ -14,6 +14,7 @@ import { buildPool, buildWaterSurface, buildCurtain, buildMist, buildLightShaft,
 import { buildIsland, buildTree, buildImportedTree } from './nature.js';
 import { loadModel, modelTextures } from './models.js';
 import { buildGallery, loadArtworkTextures } from './gallery.js';
+import { loadShopWorks, loadShopTextures } from './shop.js';
 import { Player } from './player.js';
 import { Character, prepareFigureScene } from './character.js';
 import { CoinPool } from './coin.js';
@@ -65,6 +66,7 @@ const app = {
   fernModel: null,                   // models/fern.glb, once fetched
   outfit: Object.assign({}, DEFAULT_OUTFIT),
   textures: null,
+  artworks: ARTWORKS,       // replaced by the Shopify collection when it can be read
   artworkTextures: null,
   world: null,
   animated: [],
@@ -368,7 +370,7 @@ function buildWorld(quality) {
     animated.push(shaft.uniforms);
   }
 
-  const gallery = buildGallery(ARTWORKS, app.artworkTextures, app.textures, sanctuary.chambers, quality);
+  const gallery = buildGallery(app.artworks, app.artworkTextures, app.textures, sanctuary.chambers, quality);
   root.add(gallery.group);
 
   scene.add(root);
@@ -974,9 +976,12 @@ async function boot() {
 
   ui.progress(0.58, 'hanging the work');
   await nextFrame();
-  app.artworkTextures = await loadArtworkTextures(ARTWORKS, (f) => {
-    ui.progress(0.58 + f * 0.12, 'hanging the work');
-  });
+  const forSale = await loadShopWorks();
+  const hanging = (f) => ui.progress(0.58 + f * 0.12, 'hanging the work');
+  app.artworks = forSale || ARTWORKS;
+  app.artworkTextures = forSale
+    ? await loadShopTextures(forSale, hanging)
+    : await loadArtworkTextures(ARTWORKS, hanging);
 
   ui.progress(0.70, 'pressing the clothes');
   await nextFrame();

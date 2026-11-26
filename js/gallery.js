@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { HALL, ALCOVES, PALETTE } from './config.js';
 import { inkArtwork } from './textures.js';
+import { FRAMING } from './shop.config.js';
 
 const DEG = Math.PI / 180;
 
@@ -54,8 +55,25 @@ export function loadArtworkTextures(list, onProgress) {
 
 /* --------------------------------------------------------------- labels -- */
 
+/** Writes `text` over as many lines as it needs; returns the y below the last. */
+function wrapped(ctx, text, x, y, width, line) {
+  let row = '';
+  for (const word of String(text).split(' ')) {
+    const next = row ? row + ' ' + word : word;
+    if (row && ctx.measureText(next).width > width) {
+      ctx.fillText(row, x, y);
+      y += line;
+      row = word;
+    } else row = next;
+  }
+  if (row) { ctx.fillText(row, x, y); y += line; }
+  return y;
+}
+
+const LABEL_W = 512, LABEL_H = 320;
+
 function labelTexture(art) {
-  const W = 512, H = 256;
+  const W = LABEL_W, H = LABEL_H;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const ctx = c.getContext('2d');
@@ -65,19 +83,34 @@ function labelTexture(art) {
   ctx.fillStyle = '#2b2926';
   ctx.textBaseline = 'top';
 
-  let y = 46;
-  ctx.font = '600 40px Georgia, "Times New Roman", serif';
-  ctx.fillText(art.title || 'Untitled', 40, y);
-  y += 54;
+  let y = 30;
+  ctx.font = '600 36px Georgia, "Times New Roman", serif';
+  y = wrapped(ctx, art.title || 'Untitled', 36, y, W - 72, 42) + 8;
 
-  ctx.font = 'italic 30px Georgia, "Times New Roman", serif';
+  ctx.font = 'italic 28px Georgia, "Times New Roman", serif';
   ctx.fillStyle = '#4a4741';
-  if (art.year) { ctx.fillText(art.year, 40, y); y += 40; }
+  if (art.year) { ctx.fillText(art.year, 36, y); y += 36; }
 
-  ctx.font = '28px Georgia, "Times New Roman", serif';
+  ctx.font = '25px Georgia, "Times New Roman", serif';
   ctx.fillStyle = '#5c584f';
-  if (art.medium) { ctx.fillText(art.medium, 40, y); y += 36; }
-  if (art.size) ctx.fillText(art.size, 40, y);
+  if (art.medium) y = wrapped(ctx, art.medium, 36, y, W - 72, 31);
+  if (art.size) { ctx.fillText(art.size, 36, y); y += 31; }
+
+  if (art.price) {
+    y += 8;
+    ctx.font = '600 28px Georgia, "Times New Roman", serif';
+    ctx.fillStyle = '#2b2926';
+    if (art.available) ctx.fillText(art.price, 36, y);
+    else {
+      // the gallery's red dot
+      ctx.beginPath();
+      ctx.arc(46, y + 14, 10, 0, Math.PI * 2);
+      ctx.fillStyle = '#a3211c';
+      ctx.fill();
+      ctx.fillStyle = '#2b2926';
+      ctx.fillText('Sold', 66, y);
+    }
+  }
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -129,8 +162,58 @@ export function buildGallery(artworks, loaded, textures, chambers, quality) {
   });
   const labelMat = () => new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0.0 });
 
+  const frameMat = new THREE.MeshStandardMaterial({ color: FRAMING.frameColor, roughness: 0.45, metalness: 0.1 });
+  const boardMat = new THREE.MeshStandardMaterial({
+    color: FRAMING.matColor, roughness: 0.92, metalness: 0.0,
+    emissive: FRAMING.matColor, emissiveIntensity: quality.artworkGlow
+  });
+
+  /** The wall label, set to the right of a piece `w` by `h` at reading height. */
+  function addLabel(holder, art, w, h) {
+    const lw = 0.26, lh = lw * LABEL_H / LABEL_W;
+    const label = new THREE.Mesh(new THREE.PlaneGeometry(lw, lh), labelMat());
+    label.material.map = labelTexture(art);
+    label.position.set(w / 2 + 0.30, -h / 2 + 0.12, 0.004);
+    holder.add(label);
+  }
+
+  function makeFramed(art, texInfo, index) {
+    const holder = new THREE.Group();
+    const { mat, rail, depth } = FRAMING;
+    const openW = art.width + 2 * mat, openH = art.height + 2 * mat;
+    const w = openW + 2 * rail, h = openH + 2 * rail;
+
+    // the frame is one piece: a rectangle with a rectangular hole, given some depth
+    const outline = new THREE.Shape()
+      .moveTo(-w / 2, -h / 2).lineTo(w / 2, -h / 2).lineTo(w / 2, h / 2).lineTo(-w / 2, h / 2);
+    outline.holes.push(new THREE.Path()
+      .moveTo(-openW / 2, -openH / 2).lineTo(-openW / 2, openH / 2)
+      .lineTo(openW / 2, openH / 2).lineTo(openW / 2, -openH / 2));
+    const frame = new THREE.Mesh(new THREE.ExtrudeGeometry(outline, { depth, bevelEnabled: false }), frameMat);
+    frame.castShadow = true;
+    frame.receiveShadow = true;
+    holder.add(frame);
+
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(openW, openH), boardMat);
+    board.position.z = depth * 0.45;
+    board.receiveShadow = true;
+    holder.add(board);
+
+    // unlit and left out of tone mapping: a buyer should see the colours of the photograph, not
+    // the room's idea of them. Dimmed a little so it still sits in the room.
+    const sheet = new THREE.Mesh(new THREE.PlaneGeometry(art.width, art.height),
+      new THREE.MeshBasicMaterial({ map: texInfo.tex, color: 0xd6d3ce, toneMapped: false }));
+    sheet.position.z = depth * 0.45 + 0.0016;
+    holder.add(sheet);
+
+    addLabel(holder, art, w, h);
+    holder.userData = { art, index, width: w, height: h };
+    return holder;
+  }
+
   /** Builds one hung piece and returns its group. */
   function makePiece(art, texInfo, index) {
+    if (art.framed) return makeFramed(art, texInfo, index);
     const holder = new THREE.Group();
 
     let w = art.width || 1.4;
@@ -158,12 +241,7 @@ export function buildGallery(artworks, loaded, textures, chambers, quality) {
     face.position.z = depth + 0.0012;
     holder.add(face);
 
-    // wall label, set to the right of the piece at reading height
-    const lw = 0.26, lh = 0.13;
-    const label = new THREE.Mesh(new THREE.PlaneGeometry(lw, lh), labelMat());
-    label.material.map = labelTexture(art);
-    label.position.set(w / 2 + 0.30, -h / 2 + 0.12, 0.004);
-    holder.add(label);
+    addLabel(holder, art, w, h);
 
     holder.userData = { art, index, width: w, height: h };
     return holder;
@@ -188,7 +266,7 @@ export function buildGallery(artworks, loaded, textures, chambers, quality) {
     interactables.push({
       centre: piece.position.clone(),
       normal,
-      focus: piece.position.clone().addScaledVector(normal, 2.6).setY(1.62),
+      focus: piece.position.clone().addScaledVector(normal, art.framed ? 1.7 : 2.6).setY(1.62),
       art,
       index: idx
     });
