@@ -33,9 +33,12 @@ more reads on the 4 ms surface. If walking up to a wall still looks flat, add
 one, high preset only, fading in with distance.
 
 ### Real reflection and refraction in the pool
-The water currently uses an analytic reflection — a pale dome with the oculus
-punched into it — rather than a true reflection pass. Upgrade it. (The caustics
-on the basin are done; see Done.)
+The water uses an analytic reflection — a pale dome with the oculus punched
+into it — at medium and low. A second `Reflector` for the high preset is built
+(`poolReflection`, `guardReflector`; branch `visuals/pool-mirror`) and measured
+at about +0.5 ms, but at the angles a visitor sees the pool from, the tree is
+only faintly in the water, so it is not clear it earns its cost. Decide from the
+screen, not from this note. (The caustics on the basin are done; see Done.)
 
 This is the most expensive item here. It must be **high preset only** and must
 not regress the current 4.1 ms frame cost at medium.
