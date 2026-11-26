@@ -415,6 +415,17 @@ kbd {
 }
 .caption .ghost { width: auto; padding: 11px 22px; margin-top: 20px; }
 
+/* a work from the shop: its price, and the way to buy it */
+#viewer-price { font-family: var(--serif); font-size: 24px; color: var(--paper); margin: 18px 0 14px; }
+#viewer-buy { text-align: center; text-decoration: none; }
+#viewer-price.hidden, #viewer-buy.hidden { display: none; }
+/* on a short, wide window the caption scrolls rather than losing its title off the top */
+@media (min-width: 821px) and (max-height: 640px) {
+  .viewer-inner .caption { max-height: 88vh; overflow-y: auto; }
+  #viewer-note { margin-bottom: 0; }
+  #viewer-price { margin: 10px 0; }
+}
+
 /* --------------------------------------------------------------- menu -- */
 
 .menu-title {
