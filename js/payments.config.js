@@ -44,7 +44,7 @@ export const PAYMENTS = {
 
   /** Cloudflare Turnstile site key (public). Required before real money: the
    *  Worker refuses a live Stripe key without the matching secret. */
-  turnstileSiteKey: '',
+  turnstileSiteKey: '0x4AAAAAAGUP9tdqTSRwfBQN',
 
   /** Show other visitors' wishes on the wall of the panel. Off until you
    *  have a moderation habit: these are free-text messages from strangers. */
