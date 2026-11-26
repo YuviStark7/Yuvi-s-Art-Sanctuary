@@ -892,7 +892,7 @@ function step(dt) {
   for (const u of app.animated) if (u.uTime) u.uTime.value = elapsed;
   // she only moves while someone could see it
   for (const studio of (app.world && app.world.studios) || []) {
-    if (camera.position.distanceTo(studio.heartAt) < 17) {
+    if (camera.position.distanceTo(studio.heartAt) < 17 || studio.fading) {
       studio.update(elapsed, app.mode === 'visit' ? player.eyePosition(_face) : null);
     }
   }

@@ -112,6 +112,7 @@ export function buildInvitations(chamber, replaced = []) {
   let shown = 0, last = 0;
   return {
     group,
+    get showing() { return shown > 0.01; },
     /** `near` is 0 far away and 1 at the desk; the fade is eased over the clock `t`. */
     update(t, near) {
       const dt = Math.max(0, Math.min(0.1, t - last));

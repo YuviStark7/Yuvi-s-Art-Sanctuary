@@ -340,6 +340,40 @@ function flower(anchors, probe) {
   };
 }
 
+/* ------------------------------------------------------------ reflection -- */
+
+/**
+ * Her again, upside down under the polished floor: the same geometry on the same skeleton, so it
+ * moves with her at no extra work. Only what reads at that size: skin, hair, machine and stage.
+ */
+function mirrored(root, stage) {
+  const flip = new THREE.Matrix4().makeScale(1, -1, 1);
+  const group = new THREE.Group();
+  group.name = 'dj-reflection';
+  root.updateMatrixWorld(true);
+  const meshes = [];
+  root.traverse((o) => {
+    if (o.isSkinnedMesh && !/^(eyes|lashes|brows)/.test(o.name)) meshes.push(o);
+  });
+  for (const original of meshes) {
+    const copy = new THREE.SkinnedMesh(original.geometry, original.material);
+    // detached: the skeleton already puts each vertex in the room, and this matrix then mirrors it
+    copy.bindMode = THREE.DetachedBindMode;
+    copy.bind(original.skeleton, original.bindMatrix);
+    copy.matrix.multiplyMatrices(flip, original.bindMatrix);
+    copy.matrixAutoUpdate = false;
+    const centre = root.localToWorld(new THREE.Vector3(0, 0.9, 0)).applyMatrix4(copy.bindMatrixInverse);
+    copy.boundingSphere = new THREE.Sphere(centre, 1.35);
+    group.add(copy);
+  }
+  const below = stage.clone();
+  below.matrix.multiplyMatrices(flip, stage.matrixWorld);
+  below.matrixAutoUpdate = false;
+  below.traverse((o) => { o.receiveShadow = false; });
+  group.add(below);
+  return group;
+}
+
 /* ----------------------------------------------------------------- build -- */
 
 /**
@@ -347,8 +381,9 @@ function flower(anchors, probe) {
  * @param probe    the studio's captured reflections
  * @param steel    what her metal mirrors, from buildSteelSky
  * @param surface  height of the desk's playing surface
+ * @param reflect  whether the floor shows her
  */
-export async function buildCyborg(chamber, probe, steel, surface) {
+export async function buildCyborg(chamber, probe, steel, surface, reflect = true) {
   const gltf = await loadModel('models/figure-cyborg.glb');
   const anchors = gltf.asset.extras.anchors;
   const figure = cloneSkinned(gltf.scene);
@@ -416,7 +451,8 @@ export async function buildCyborg(chamber, probe, steel, surface) {
   onHead(bloom.group);
   const machine = { steel: chrome, gun, dark, glow };
   buildMachine(body, rest, machine);
-  root.add(buildPlatform(RISER / STATURE, machine));
+  const stage = buildPlatform(RISER / STATURE, machine);
+  root.add(stage);
   // one generous sphere round all of her, so nothing is drawn when she is out of view
   const reach = new THREE.Sphere(new THREE.Vector3(0, 0.9, 0), 1.25);
   figure.traverse((o) => {
@@ -500,6 +536,7 @@ export async function buildCyborg(chamber, probe, steel, surface) {
 
   return {
     group: root,
+    reflection: reflect ? mirrored(root, stage) : null,
     head: bones.head,
     update(t, visitor) {
       watch(t, visitor);

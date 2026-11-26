@@ -127,11 +127,14 @@ export function buildStudio(chamber, textures, quality) {
     group, lights, animated: desk.animated, capture, dj: null, gone: false,
     heartAt: at(0, 1.35, spec.desk + 0.5),
     chamber,
+    /** True while an invitation is still on screen and so still wants the clock. */
+    get fading() { return invitations.showing; },
     async arrive() {
-      const dj = await buildCyborg(chamber, probe.texture, steel.texture, TOP);
+      const dj = await buildCyborg(chamber, probe.texture, steel.texture, TOP, quality.floorReflection);
       if (studio.gone) { dj.dispose(); return; }          // the room was rebuilt while she loaded
       studio.dj = dj;
       group.add(dj.group);
+      if (dj.reflection) group.add(dj.reflection);
     },
     update(t, visitor) {
       if (studio.dj) studio.dj.update(t, visitor);
@@ -141,7 +144,12 @@ export function buildStudio(chamber, textures, quality) {
     dispose() {
       studio.gone = true;
       invitations.dispose();
-      if (studio.dj) { studio.dj.group.removeFromParent(); studio.dj.dispose(); }
+      if (studio.dj) {
+        // both go before the room is swept for things to dispose: her geometry is cached
+        studio.dj.group.removeFromParent();
+        if (studio.dj.reflection) studio.dj.reflection.removeFromParent();
+        studio.dj.dispose();
+      }
       if (probe) probe.dispose();
       if (steel) steel.dispose();
     }
